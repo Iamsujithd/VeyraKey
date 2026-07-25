@@ -6,7 +6,7 @@
 - **Application implementation:** V1 feature implementation complete; portfolio release in review.
 - **Current implementation task:** Task 14 — local-only release; real-account/browser/store evidence open.
 - **Completed implementation tasks:** 13/14.
-- **Last updated:** 2026-07-25T14:01:00Z — Real web-client Google Drive sync/recovery wiring accepted; local release rebuilt.
+- **Last updated:** 2026-07-25T14:12:00Z — OneDrive app-folder OAuth, sync, and recovery added; multi-provider expansion remains active.
 
 ## Status definitions
 
@@ -26,6 +26,7 @@
 | 4 | Encrypted login/note CRUD | Complete | `pnpm check` passes; 20 test files/86 tests; encrypted immutable CRUD/restart/concurrency/plaintext inspection; web and both MV3 builds | None |
 | 5 | Immutable sync engine | Complete | `pnpm check` passes; 22 test files/97 tests; encrypted two-device convergence, HLC/DAG/conflicts, retry/quarantine, durable queue, snapshots/checkpoints, conflict UI | None |
 | 6 | Google Drive BYOS | Complete | Real web-client OAuth/sync/restore wiring; appDataFolder-only adapter; encrypted recovery archive; provider and UI suites | User-owned OAuth client/test-account run remains external evidence |
+| 6A | Microsoft OneDrive BYOS | Code complete | OAuth authorization code with PKCE; least-privilege app folder; immutable sync objects; encrypted recovery archive; provider and web tests | User-owned Entra client/test-account run remains external evidence |
 | 7 | Secure MV3 extension sessions | Complete | `pnpm check`; authenticated restart resume, trusted storage/sender tests, multi-context lock | Real-browser suspension matrix remains a release gate |
 | 8 | Origin-safe autofill/capture | Complete | Exact-origin/IDN policy, activeTab fill, confirmed save/update, hostile context tests | Real-browser fixture matrix remains a release gate |
 | 9 | Password generation/TOTP/clipboard | Complete | RFC vectors, encrypted TOTP fields, QR/URI import, generator and clipboard tests | Native QR capability varies and fails visibly |

@@ -81,6 +81,7 @@ export interface VaultClient {
   }): Promise<VaultItemView>;
   deleteItem?(itemId: string, expectedRevisionId: string): Promise<void>;
   disconnectGoogleDrive?(): void;
+  disconnectOneDrive?(): void;
   enrollDevice(masterPassword: string): Promise<VaultViewState>;
   exportEncryptedArchive?(): Promise<unknown>;
   getState(): VaultViewState;
@@ -116,6 +117,11 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultViewState>;
+  restoreFromOneDrive?(request: {
+    readonly clientId: string;
+    readonly newMasterPassword: string;
+    readonly recoveryKit: string;
+  }): Promise<VaultViewState>;
   revokeDevice(slotId: string): Promise<VaultViewState>;
   searchItems?(query: string): Promise<readonly VaultItemView[]>;
   stepUpCompartment(
@@ -124,6 +130,7 @@ export interface VaultClient {
   ): Promise<VaultViewState>;
   subscribe(listener: (state: VaultViewState) => void): () => void;
   syncGoogleDrive?(request: { readonly clientId: string }): Promise<VaultSyncResult>;
+  syncOneDrive?(request: { readonly clientId: string }): Promise<VaultSyncResult>;
   unlock(masterPassword: string): Promise<VaultViewState>;
   unlockWithDevice(slotId: string): Promise<VaultViewState>;
   unlockWithRecoveryKit(recoveryKit: string): Promise<VaultViewState>;
@@ -349,7 +356,9 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
   );
   const [healthStatus, setHealthStatus] = useState("");
   const [googleClientId, setGoogleClientId] = useState("");
+  const [microsoftClientId, setMicrosoftClientId] = useState("");
   const [driveStatus, setDriveStatus] = useState("");
+  const [oneDriveStatus, setOneDriveStatus] = useState("");
   const recoveryContext = screenState.status === "unlocked" ? screenState.recovery.status : null;
   const itemRecoveryStatus = screenState.status === "unlocked" ? screenState.recovery.status : null;
 
@@ -561,6 +570,37 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     } catch {
       setError(
         "Unable to restore from Google Drive. Check authorization, the Recovery Kit, and the recovery archive.",
+      );
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function restoreOneDrive() {
+    if (client.restoreFromOneDrive === undefined || microsoftClientId.trim().length === 0) {
+      setError("Enter the Microsoft Entra application client ID before restoring from OneDrive.");
+      return;
+    }
+    if (restorePassword.length === 0 || restorePassword !== restoreConfirmation) {
+      setError("Enter matching new master passwords for the restored vault.");
+      return;
+    }
+    const request = {
+      clientId: microsoftClientId.trim(),
+      newMasterPassword: restorePassword,
+      recoveryKit: recoveryKitInput,
+    };
+    setRestorePassword("");
+    setRestoreConfirmation("");
+    setRecoveryKitInput("");
+    setOperation("restore");
+    setError(null);
+    try {
+      setScreenState(await client.restoreFromOneDrive(request));
+      setShowRestore(false);
+    } catch {
+      setError(
+        "Unable to restore from OneDrive. Check authorization, the Recovery Kit, and the encrypted recovery archive.",
       );
     } finally {
       setOperation(null);
@@ -1070,6 +1110,40 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     setDriveStatus("Google Drive disconnected. No OAuth token was persisted.");
   }
 
+  async function syncOneDrive() {
+    if (client.syncOneDrive === undefined || microsoftClientId.trim().length === 0) {
+      setError("Enter the Microsoft Entra application client ID before connecting OneDrive.");
+      return;
+    }
+    setOperation("item");
+    setError(null);
+    setOneDriveStatus("Waiting for Microsoft authorization…");
+    try {
+      const result = await client.syncOneDrive({ clientId: microsoftClientId.trim() });
+      setItems((await client.listItems?.()) ?? []);
+      setOneDriveStatus(
+        `Sync complete: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded, ${result.conflicts.length} conflict(s), ${result.quarantined} quarantined.`,
+      );
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      setOneDriveStatus(
+        code === "ONEDRIVE_AUTH"
+          ? "Microsoft authorization expired or was revoked. Connect again to retry."
+          : code === "ONEDRIVE_QUOTA"
+            ? "OneDrive quota is exhausted. Local encrypted data remains available."
+            : "OneDrive sync did not complete. You can keep working locally and retry.",
+      );
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  function disconnectOneDrive() {
+    client.disconnectOneDrive?.();
+    setOneDriveStatus("OneDrive disconnected. No OAuth token was persisted.");
+  }
+
   return (
     <main
       className="vault-shell"
@@ -1209,6 +1283,20 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
                   />
                 </label>
               )}
+              {client.restoreFromOneDrive === undefined ? null : (
+                <label className="vault-field">
+                  <span>Microsoft Entra application client ID</span>
+                  <input
+                    autoComplete="off"
+                    className="vault-input"
+                    disabled={busy}
+                    onChange={(event) => setMicrosoftClientId(event.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    spellCheck={false}
+                    value={microsoftClientId}
+                  />
+                </label>
+              )}
               <label className="vault-field">
                 <span>Encrypted BYOS vault state</span>
                 <textarea
@@ -1261,6 +1349,16 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
                   type="button"
                 >
                   Restore directly from Google Drive
+                </button>
+              )}
+              {client.restoreFromOneDrive === undefined ? null : (
+                <button
+                  className="secondary-button"
+                  disabled={busy || microsoftClientId.trim().length === 0}
+                  onClick={() => void restoreOneDrive()}
+                  type="button"
+                >
+                  Restore directly from OneDrive
                 </button>
               )}
               <button
@@ -1828,6 +1926,54 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
                 {driveStatus ? (
                   <p aria-live="polite" className="form-guidance" role="status">
                     {driveStatus}
+                  </p>
+                ) : null}
+              </section>
+            )}
+
+            {client.syncOneDrive === undefined ? null : (
+              <section className="security-section" aria-labelledby="onedrive-title">
+                <h2 id="onedrive-title">Microsoft OneDrive encrypted sync</h2>
+                <p className="form-guidance">
+                  OneDrive stores authenticated ciphertext in this application’s dedicated folder.
+                  Authorization uses PKCE and the least-privilege Files.ReadWrite.AppFolder scope;
+                  access tokens remain only in memory.
+                </p>
+                <label className="vault-field">
+                  <span>Microsoft Entra application client ID</span>
+                  <input
+                    autoComplete="off"
+                    className="vault-input"
+                    disabled={busy}
+                    onChange={(event) => setMicrosoftClientId(event.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    spellCheck={false}
+                    value={microsoftClientId}
+                  />
+                </label>
+                <p className="form-guidance">
+                  Configure this SPA redirect URI in Microsoft Entra:{" "}
+                  {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/microsoft/callback`}
+                </p>
+                <button
+                  className="action-button"
+                  disabled={busy || microsoftClientId.trim().length === 0}
+                  onClick={() => void syncOneDrive()}
+                  type="button"
+                >
+                  Connect and sync with OneDrive
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={disconnectOneDrive}
+                  type="button"
+                >
+                  Disconnect OneDrive
+                </button>
+                {oneDriveStatus ? (
+                  <p aria-live="polite" className="form-guidance" role="status">
+                    {oneDriveStatus}
                   </p>
                 ) : null}
               </section>

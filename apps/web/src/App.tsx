@@ -7,6 +7,7 @@ import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
 import { createVaultService } from "@zk-wallet/vault";
 import { useState } from "react";
 import { withGoogleDriveSync } from "./googleDrive";
+import { withOneDriveSync } from "./oneDrive";
 
 export interface AppProps {
   readonly client?: VaultClient;
@@ -20,7 +21,7 @@ function createLocalVaultClient(): VaultClient {
     itemRepository: new IndexedDbItemRevisionRepository(),
     repository: new IndexedDbVaultHeaderRepository(),
   });
-  return withGoogleDriveSync(service, crypto);
+  return withOneDriveSync(withGoogleDriveSync(service, crypto), crypto);
 }
 
 export function App({ client }: AppProps) {

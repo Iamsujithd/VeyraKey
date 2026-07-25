@@ -37,6 +37,20 @@ memory and is discarded on disconnect or page restart. Each successful sync also
 encrypted Recovery-Kit-protected archive so a clean browser profile can use **Restore directly from
 Google Drive**.
 
+## Enable Microsoft OneDrive BYOS
+
+1. Register a single-page application in Microsoft Entra.
+2. Add delegated Microsoft Graph permission `Files.ReadWrite.AppFolder`.
+3. Add the redirect URI
+   `http://127.0.0.1:5173/oauth/microsoft/callback`.
+4. Allow personal Microsoft accounts if you want consumer OneDrive support.
+5. Unlock the vault, paste the public application client ID under
+   **Microsoft OneDrive encrypted sync**, and select **Connect and sync with OneDrive**.
+
+The web client uses OAuth authorization code with PKCE. Access tokens are retained only in memory.
+OneDrive receives authenticated ciphertext in the application's dedicated folder. A clean profile
+can restore from the encrypted recovery archive using the original Recovery Kit.
+
 Google still observes account identity, request timing, object sizes, and access patterns. This
 portfolio build has not received an independent security audit; use synthetic data during review.
 

@@ -167,7 +167,7 @@ function deviceId(): string {
 export function withGoogleDriveSync(
   service: CoreVaultClient,
   cryptoProvider: CryptoProvider,
-): VaultClient {
+): CoreVaultClient & VaultClient {
   let tokenProvider: BrowserGoogleTokenProvider | null = null;
   let configuredClientId = "";
   function drive(clientId: string): GoogleDriveSyncProvider {

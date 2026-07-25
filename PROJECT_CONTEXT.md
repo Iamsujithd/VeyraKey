@@ -33,7 +33,7 @@ Build an industry-grade portfolio v1: a browser-first, zero-knowledge password m
 - WXT Chromium/Firefox Manifest V3 extension builds.
 - Shared TypeScript packages for crypto, vault, sync, providers, documents, credentials, and UI.
 - Hono on Cloudflare Workers only for minimal v1 deployment needs.
-- Google Drive `appDataFolder` as the first BYOS adapter.
+- Google Drive `appDataFolder` and Microsoft OneDrive application-folder adapters.
 
 ## Approved v1 scope
 

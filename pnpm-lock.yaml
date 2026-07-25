@@ -109,6 +109,9 @@ importers:
       '@zk-wallet/provider-drive':
         specifier: workspace:*
         version: link:../../packages/provider-drive
+      '@zk-wallet/provider-onedrive':
+        specifier: workspace:*
+        version: link:../../packages/provider-onedrive
       '@zk-wallet/sync':
         specifier: workspace:*
         version: link:../../packages/sync
@@ -163,6 +166,12 @@ importers:
       '@zk-wallet/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@zk-wallet/sync':
+        specifier: workspace:*
+        version: link:../sync
+
+  packages/provider-onedrive:
+    dependencies:
       '@zk-wallet/sync':
         specifier: workspace:*
         version: link:../sync

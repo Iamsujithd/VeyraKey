@@ -7,6 +7,7 @@
     "@zk-wallet/crypto": "workspace:*",
     "@zk-wallet/persistence": "workspace:*",
     "@zk-wallet/provider-drive": "workspace:*",
+    "@zk-wallet/provider-onedrive": "workspace:*",
     "@zk-wallet/sync": "workspace:*",
     "@zk-wallet/ui": "workspace:*",
     "@zk-wallet/vault": "workspace:*",
