@@ -170,7 +170,9 @@ describe("VaultScreen", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     render(<VaultScreen client={vaultClient} surface="Web application" />);
 
-    expect(await screen.findByRole("heading", { name: "Password health" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Vault unlocked" });
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+    expect(screen.getByRole("heading", { name: "Password health" })).toBeInTheDocument();
     await screen.findAllByText("Health fixture");
     fireEvent.click(screen.getByRole("button", { name: "Analyze passwords locally" }));
 
@@ -235,6 +237,7 @@ describe("VaultScreen", () => {
     vaultClient.importItems = importItems;
     render(<VaultScreen client={vaultClient} surface="Web application" />);
     await screen.findByRole("heading", { name: "Vault unlocked" });
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
 
     fireEvent.change(screen.getByLabelText("Import file contents"), {
       target: {
@@ -271,10 +274,12 @@ describe("VaultScreen", () => {
     vaultClient.disconnectGoogleDrive = vi.fn();
     render(<VaultScreen client={vaultClient} surface="Web application" />);
     await screen.findByRole("heading", { name: "Vault unlocked" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-    const connect = screen.getByRole("button", { name: "Connect and sync encrypted vault" });
+    const connect = screen.getByRole("button", { name: "Connect Google Drive" });
     expect(connect).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Google OAuth web client ID"), {
+    fireEvent.click(screen.getByText("Developer setup required"));
+    fireEvent.change(screen.getByLabelText("Google OAuth client ID"), {
       target: { value: "fixture.apps.googleusercontent.com" },
     });
     expect(connect).toBeEnabled();

@@ -6,7 +6,7 @@
 - **Application implementation:** V1 feature implementation complete; portfolio release in review.
 - **Current implementation task:** Task 14 — local-only release; real-account/browser/store evidence open.
 - **Completed implementation tasks:** 13/14.
-- **Last updated:** 2026-07-25T14:12:00Z — OneDrive app-folder OAuth, sync, and recovery added; multi-provider expansion remains active.
+- **Last updated:** 2026-07-25T14:23:00Z — Unlocked UI split into Vault, Tools, and Settings; cloud providers now use direct OAuth connection cards with build-time client configuration.
 
 ## Status definitions
 

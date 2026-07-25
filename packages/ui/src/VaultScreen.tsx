@@ -206,6 +206,10 @@ export type VaultItemView =
 
 export interface VaultScreenProps {
   readonly client: VaultClient;
+  readonly providerConfiguration?: {
+    readonly googleClientId?: string | undefined;
+    readonly microsoftClientId?: string | undefined;
+  };
   readonly surface: string;
 }
 
@@ -305,7 +309,7 @@ function operationError(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export function VaultScreen({ client, surface }: VaultScreenProps) {
+export function VaultScreen({ client, providerConfiguration, surface }: VaultScreenProps) {
   const [screenState, setScreenState] = useState<ScreenState>({ status: "preparing" });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [operation, setOperation] = useState<Operation>(null);
@@ -355,10 +359,15 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     {},
   );
   const [healthStatus, setHealthStatus] = useState("");
-  const [googleClientId, setGoogleClientId] = useState("");
-  const [microsoftClientId, setMicrosoftClientId] = useState("");
+  const [googleClientId, setGoogleClientId] = useState(
+    providerConfiguration?.googleClientId?.trim() ?? "",
+  );
+  const [microsoftClientId, setMicrosoftClientId] = useState(
+    providerConfiguration?.microsoftClientId?.trim() ?? "",
+  );
   const [driveStatus, setDriveStatus] = useState("");
   const [oneDriveStatus, setOneDriveStatus] = useState("");
+  const [activeView, setActiveView] = useState<"settings" | "tools" | "vault">("vault");
   const recoveryContext = screenState.status === "unlocked" ? screenState.recovery.status : null;
   const itemRecoveryStatus = screenState.status === "unlocked" ? screenState.recovery.status : null;
 
@@ -1566,776 +1575,821 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
               </p>
             </div>
             <PrivacyNote state={screenState} />
+            <nav aria-label="Vault sections" className="app-navigation">
+              {(["vault", "tools", "settings"] as const).map((view) => (
+                <button
+                  aria-current={activeView === view ? "page" : undefined}
+                  className={activeView === view ? "nav-button nav-button-active" : "nav-button"}
+                  key={view}
+                  onClick={() => setActiveView(view)}
+                  type="button"
+                >
+                  {view === "vault" ? "Vault" : view === "tools" ? "Tools" : "Settings"}
+                </button>
+              ))}
+            </nav>
 
-            {screenState.syncConflicts !== undefined && screenState.syncConflicts.length > 0 ? (
-              <section className="sync-conflicts" aria-labelledby="sync-conflicts-title">
-                <h2 id="sync-conflicts-title">Sync conflicts need review</h2>
-                <p>
-                  Independent encrypted edits were preserved. The current deterministic version is
-                  shown below; no conflicting revision was deleted.
-                </p>
-                <ul>
-                  {screenState.syncConflicts.map((conflict) => (
-                    <li key={conflict.itemId}>
-                      Item {conflict.itemId.slice(0, 8)}… has {conflict.revisionIds.length}{" "}
-                      preserved versions.
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
+            <div className="app-view" hidden={activeView !== "vault"}>
+              {screenState.syncConflicts !== undefined && screenState.syncConflicts.length > 0 ? (
+                <section className="sync-conflicts" aria-labelledby="sync-conflicts-title">
+                  <h2 id="sync-conflicts-title">Sync conflicts need review</h2>
+                  <p>
+                    Independent encrypted edits were preserved. The current deterministic version is
+                    shown below; no conflicting revision was deleted.
+                  </p>
+                  <ul>
+                    {screenState.syncConflicts.map((conflict) => (
+                      <li key={conflict.itemId}>
+                        Item {conflict.itemId.slice(0, 8)}… has {conflict.revisionIds.length}{" "}
+                        preserved versions.
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
-            <section className="security-section" aria-labelledby="items-title">
-              <h2 id="items-title">Encrypted items ({items.length})</h2>
-              <label className="vault-field">
-                <span>Search decrypted items on this device</span>
-                <input
-                  className="vault-input"
-                  onChange={(event) => {
-                    const query = event.target.value;
-                    setItemSearch(query);
-                    if (client.searchItems !== undefined) {
-                      void client
-                        .searchItems(query)
-                        .then(setItems)
-                        .catch(() => setError("The encrypted local search index was rebuilt."));
-                    }
-                  }}
-                  type="search"
-                  value={itemSearch}
-                />
-              </label>
-              {items.length === 0 ? (
-                <p className="capability-note">No saved logins or secure notes yet.</p>
-              ) : visibleItems.length === 0 ? (
-                <p className="capability-note">No encrypted items match this local search.</p>
-              ) : (
-                visibleItems.map((item) => (
-                  <div className="security-row" key={item.id}>
-                    <p>
-                      <strong>{item.title}</strong>
-                      <span>
-                        {item.type === "login" ? item.username || "Login" : "Secure note"}
-                      </span>
-                      {item.folder ? <span>Folder: {item.folder}</span> : null}
-                      {item.tags?.length ? <span>Tags: {item.tags.join(", ")}</span> : null}
-                      {item.favorite ? <span>Favorite</span> : null}
-                      {item.type === "login" && totpCodes[item.id] !== undefined ? (
-                        <span>Current code: {totpCodes[item.id]}</span>
-                      ) : null}
-                    </p>
-                    <div className="item-actions">
-                      {item.type === "login" ? (
-                        <button
-                          className="secondary-button compact-button"
-                          onClick={() => void copySecret(item.password)}
-                          type="button"
-                        >
-                          Copy password
-                        </button>
-                      ) : null}
-                      {item.type === "login" && item.totpUri ? (
-                        <button
-                          className="secondary-button compact-button"
-                          onClick={() => void revealTotp(item)}
-                          type="button"
-                        >
-                          Show current TOTP
-                        </button>
-                      ) : null}
-                      <button
-                        className="secondary-button compact-button"
-                        onClick={() => editItem(item)}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="danger-button compact-button"
-                        onClick={() => void deleteItem(item)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-              <form className="vault-form inset-form" onSubmit={saveItem}>
+              <section className="security-section" aria-labelledby="items-title">
+                <h2 id="items-title">Encrypted items ({items.length})</h2>
                 <label className="vault-field">
-                  <span>Item type</span>
-                  <select
+                  <span>Search decrypted items on this device</span>
+                  <input
                     className="vault-input"
-                    disabled={editingItem !== null || busy}
                     onChange={(event) => {
-                      clearItemForm();
-                      setItemType(event.target.value as "login" | "secure-note");
+                      const query = event.target.value;
+                      setItemSearch(query);
+                      if (client.searchItems !== undefined) {
+                        void client
+                          .searchItems(query)
+                          .then(setItems)
+                          .catch(() => setError("The encrypted local search index was rebuilt."));
+                      }
                     }}
-                    value={itemType}
-                  >
-                    <option value="login">Login</option>
-                    <option value="secure-note">Secure note</option>
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span>Title</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setItemTitle(event.target.value)}
-                    value={itemTitle}
+                    type="search"
+                    value={itemSearch}
                   />
                 </label>
-                {itemType === "login" ? (
-                  <>
-                    <label className="vault-field">
-                      <span>Username</span>
-                      <input
-                        autoComplete="off"
-                        className="vault-input"
-                        disabled={busy}
-                        onChange={(event) => setItemUsername(event.target.value)}
-                        value={itemUsername}
-                      />
-                    </label>
-                    <label className="vault-field">
-                      <span>Password</span>
-                      <input
-                        autoComplete="new-password"
-                        className="vault-input"
-                        disabled={busy}
-                        onChange={(event) => setItemPassword(event.target.value)}
-                        type="password"
-                        value={itemPassword}
-                      />
-                    </label>
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() =>
-                        setItemPassword(
-                          generatePassword({
-                            alphabet:
-                              "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*",
-                            length: 24,
-                            random: {
-                              randomBytes(length) {
-                                const output = new Uint8Array(length);
-                                crypto.getRandomValues(output);
-                                return output;
-                              },
-                            },
-                          }),
-                        )
-                      }
-                      type="button"
-                    >
-                      Generate strong password
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() =>
-                        setItemPassword(
-                          generatePassphrase({
-                            random: {
-                              randomBytes(length) {
-                                const output = new Uint8Array(length);
-                                crypto.getRandomValues(output);
-                                return output;
-                              },
-                            },
-                            wordCount: 6,
-                            words: BUILT_IN_PASSPHRASE_WORDS,
-                          }),
-                        )
-                      }
-                      type="button"
-                    >
-                      Generate passphrase
-                    </button>
-                    <label className="vault-field">
-                      <span>Website addresses, one per line</span>
-                      <textarea
-                        className="vault-input vault-textarea"
-                        disabled={busy}
-                        onChange={(event) => setItemUris(event.target.value)}
-                        value={itemUris}
-                      />
-                    </label>
-                    <label className="vault-field">
-                      <span>Authenticator otpauth URI (optional)</span>
-                      <input
-                        className="vault-input"
-                        disabled={busy}
-                        onChange={(event) => setItemTotpUri(event.target.value)}
-                        spellCheck={false}
-                        value={itemTotpUri}
-                      />
-                    </label>
-                    <label className="vault-field">
-                      <span>Import authenticator QR image (optional)</span>
-                      <input
-                        accept="image/png,image/jpeg,image/webp"
-                        disabled={busy}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file === undefined) return;
-                          const Detector = (
-                            globalThis as unknown as {
-                              BarcodeDetector?: new (options: {
-                                formats: string[];
-                              }) => {
-                                detect(
-                                  source: unknown,
-                                ): Promise<readonly { readonly rawValue?: string }[]>;
-                              };
-                            }
-                          ).BarcodeDetector;
-                          if (
-                            Detector === undefined ||
-                            globalThis.createImageBitmap === undefined
-                          ) {
-                            setTotpImportStatus(
-                              "QR scanning is unavailable here; paste the otpauth URI instead.",
-                            );
-                            return;
-                          }
-                          setTotpImportStatus("Reading QR image locally…");
-                          void createImageBitmap(file)
-                            .then(async (bitmap) => {
-                              try {
-                                const parsed = await parseOtpAuthQr(
-                                  bitmap,
-                                  new Detector({ formats: ["qr_code"] }),
-                                );
-                                setItemTotpUri(parsed.uri);
-                                setTotpImportStatus("Authenticator QR imported locally.");
-                              } finally {
-                                bitmap.close();
-                              }
-                            })
-                            .catch(() =>
-                              setTotpImportStatus(
-                                "No valid authenticator QR was found; no data was saved.",
-                              ),
-                            );
-                        }}
-                        type="file"
-                      />
-                    </label>
-                    {totpImportStatus ? (
-                      <p aria-live="polite" className="form-guidance">
-                        {totpImportStatus}
-                      </p>
-                    ) : null}
-                  </>
-                ) : null}
-                <label className="vault-field">
-                  <span>Folder (optional)</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setItemFolder(event.target.value)}
-                    value={itemFolder}
-                  />
-                </label>
-                <label className="vault-field">
-                  <span>Tags, comma separated</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setItemTags(event.target.value)}
-                    value={itemTags}
-                  />
-                </label>
-                <label className="vault-field">
-                  <input
-                    checked={itemFavorite}
-                    disabled={busy}
-                    onChange={(event) => setItemFavorite(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>Favorite</span>
-                </label>
-                <label className="vault-field">
-                  <span>{itemType === "login" ? "Notes" : "Secure note"}</span>
-                  <textarea
-                    className="vault-input vault-textarea"
-                    disabled={busy}
-                    onChange={(event) => setItemBody(event.target.value)}
-                    value={itemBody}
-                  />
-                </label>
-                <button className="action-button" disabled={busy} type="submit">
-                  {editingItem === null ? "Save encrypted item" : "Save encrypted revision"}
-                </button>
-                {editingItem !== null ? (
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={clearItemForm}
-                    type="button"
-                  >
-                    Cancel edit
-                  </button>
-                ) : null}
-              </form>
-            </section>
-
-            {client.syncGoogleDrive === undefined ? null : (
-              <section className="security-section" aria-labelledby="drive-title">
-                <h2 id="drive-title">Google Drive encrypted sync</h2>
-                <p className="form-guidance">
-                  Drive stores authenticated ciphertext in its hidden app-data folder. The OAuth
-                  token stays only in memory; Google can still observe account, size, and timing
-                  metadata.
-                </p>
-                <label className="vault-field">
-                  <span>Google OAuth web client ID</span>
-                  <input
-                    autoComplete="off"
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setGoogleClientId(event.target.value)}
-                    placeholder="…apps.googleusercontent.com"
-                    spellCheck={false}
-                    value={googleClientId}
-                  />
-                </label>
-                <p className="form-guidance">
-                  Configure this exact redirect URI in Google Cloud:{" "}
-                  {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/google/callback`}
-                </p>
-                <button
-                  className="action-button"
-                  disabled={busy || googleClientId.trim().length === 0}
-                  onClick={() => void syncGoogleDrive()}
-                  type="button"
-                >
-                  Connect and sync encrypted vault
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={disconnectGoogleDrive}
-                  type="button"
-                >
-                  Disconnect Google Drive
-                </button>
-                {driveStatus ? (
-                  <p aria-live="polite" className="form-guidance" role="status">
-                    {driveStatus}
-                  </p>
-                ) : null}
-              </section>
-            )}
-
-            {client.syncOneDrive === undefined ? null : (
-              <section className="security-section" aria-labelledby="onedrive-title">
-                <h2 id="onedrive-title">Microsoft OneDrive encrypted sync</h2>
-                <p className="form-guidance">
-                  OneDrive stores authenticated ciphertext in this application’s dedicated folder.
-                  Authorization uses PKCE and the least-privilege Files.ReadWrite.AppFolder scope;
-                  access tokens remain only in memory.
-                </p>
-                <label className="vault-field">
-                  <span>Microsoft Entra application client ID</span>
-                  <input
-                    autoComplete="off"
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setMicrosoftClientId(event.target.value)}
-                    placeholder="00000000-0000-0000-0000-000000000000"
-                    spellCheck={false}
-                    value={microsoftClientId}
-                  />
-                </label>
-                <p className="form-guidance">
-                  Configure this SPA redirect URI in Microsoft Entra:{" "}
-                  {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/microsoft/callback`}
-                </p>
-                <button
-                  className="action-button"
-                  disabled={busy || microsoftClientId.trim().length === 0}
-                  onClick={() => void syncOneDrive()}
-                  type="button"
-                >
-                  Connect and sync with OneDrive
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={disconnectOneDrive}
-                  type="button"
-                >
-                  Disconnect OneDrive
-                </button>
-                {oneDriveStatus ? (
-                  <p aria-live="polite" className="form-guidance" role="status">
-                    {oneDriveStatus}
-                  </p>
-                ) : null}
-              </section>
-            )}
-
-            <section className="security-section" aria-labelledby="health-title">
-              <h2 id="health-title">Password health</h2>
-              <p className="form-guidance">
-                Weakness, reuse, and age are calculated only in this unlocked client. Breach checks
-                are optional and send one SHA-1 hash prefix—not the password—to Pwned Passwords.
-              </p>
-              <button
-                className="secondary-button"
-                disabled={busy}
-                onClick={analyzeLocalPasswords}
-                type="button"
-              >
-                Analyze passwords locally
-              </button>
-              {items
-                .filter(
-                  (item): item is Extract<VaultItemView, { type: "login" }> =>
-                    item.type === "login",
-                )
-                .map((item) => {
-                  const finding = healthFindings[item.id];
-                  const pwned = pwnedResults[item.id];
-                  return (
-                    <div className="security-row" key={`health-${item.id}`}>
+                {items.length === 0 ? (
+                  <p className="capability-note">No saved logins or secure notes yet.</p>
+                ) : visibleItems.length === 0 ? (
+                  <p className="capability-note">No encrypted items match this local search.</p>
+                ) : (
+                  visibleItems.map((item) => (
+                    <div className="security-row" key={item.id}>
                       <p>
                         <strong>{item.title}</strong>
                         <span>
-                          {finding === undefined
-                            ? "Not analyzed"
-                            : [
-                                finding.weak ? "weak" : "strength checks passed",
-                                finding.reused ? "reused" : "not reused",
-                                finding.ageDays === null
-                                  ? "age unknown"
-                                  : `${finding.ageDays} days since item update`,
-                              ].join(" · ")}
-                          {pwned?.status === "found"
-                            ? ` · found ${pwned.count} time(s) in the breach corpus`
-                            : pwned?.status === "not-found"
-                              ? " · not found in the breach corpus"
-                              : pwned?.status === "unavailable"
-                                ? " · breach check unavailable"
-                                : ""}
+                          {item.type === "login" ? item.username || "Login" : "Secure note"}
                         </span>
+                        {item.folder ? <span>Folder: {item.folder}</span> : null}
+                        {item.tags?.length ? <span>Tags: {item.tags.join(", ")}</span> : null}
+                        {item.favorite ? <span>Favorite</span> : null}
+                        {item.type === "login" && totpCodes[item.id] !== undefined ? (
+                          <span>Current code: {totpCodes[item.id]}</span>
+                        ) : null}
                       </p>
-                      <button
-                        className="secondary-button compact-button"
-                        disabled={busy}
-                        onClick={() => void checkPasswordExposure(item)}
-                        type="button"
-                      >
-                        Check breach corpus
-                      </button>
+                      <div className="item-actions">
+                        {item.type === "login" ? (
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={() => void copySecret(item.password)}
+                            type="button"
+                          >
+                            Copy password
+                          </button>
+                        ) : null}
+                        {item.type === "login" && item.totpUri ? (
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={() => void revealTotp(item)}
+                            type="button"
+                          >
+                            Show current TOTP
+                          </button>
+                        ) : null}
+                        <button
+                          className="secondary-button compact-button"
+                          onClick={() => editItem(item)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="danger-button compact-button"
+                          onClick={() => void deleteItem(item)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                  );
-                })}
-              {healthStatus ? (
-                <p aria-live="polite" className="form-guidance" role="status">
-                  {healthStatus}
-                </p>
-              ) : null}
-            </section>
-
-            <section className="security-section" aria-labelledby="transfer-title">
-              <h2 id="transfer-title">Import and encrypted backup</h2>
-              <label className="vault-field">
-                <span>Import format</span>
-                <select
-                  className="vault-input"
-                  disabled={busy}
-                  onChange={(event) => {
-                    setImportSource(event.target.value as "bitwarden" | "csv");
-                    setImportPreview(null);
-                  }}
-                  value={importSource}
-                >
-                  <option value="csv">Generic CSV</option>
-                  <option value="bitwarden">Bitwarden JSON</option>
-                </select>
-              </label>
-              <label className="vault-field">
-                <span>Import file contents</span>
-                <textarea
-                  className="vault-input vault-textarea"
-                  disabled={busy}
-                  onChange={(event) => {
-                    setImportText(event.target.value);
-                    setImportPreview(null);
-                  }}
-                  value={importText}
-                />
-              </label>
-              <button
-                className="secondary-button"
-                disabled={busy || importText.length === 0}
-                onClick={previewImport}
-                type="button"
-              >
-                Preview import
-              </button>
-              {importPreview === null ? null : (
-                <section aria-label="Import preview">
-                  <p>
-                    {importPreview.validCount} valid row(s). Duplicate warnings are unchecked by
-                    default.
-                  </p>
-                  {importPreview.rows.map((row) => (
-                    <label className="vault-field" key={row.index}>
-                      <input
-                        checked={selectedImportRows.has(row.index)}
-                        disabled={row.status !== "valid" || busy}
-                        onChange={(event) => {
-                          setSelectedImportRows((current) => {
-                            const next = new Set(current);
-                            if (event.target.checked) next.add(row.index);
-                            else next.delete(row.index);
-                            return next;
-                          });
-                        }}
-                        type="checkbox"
-                      />
-                      <span>
-                        {row.sourceLabel}: {row.status}
-                        {row.warnings.length ? ` — ${row.warnings.join(", ")}` : ""}
-                      </span>
-                    </label>
-                  ))}
-                  <button
-                    className="action-button"
-                    disabled={busy || selectedImportRows.size === 0}
-                    onClick={() => void commitImport()}
-                    type="button"
-                  >
-                    Import selected rows atomically
-                  </button>
-                </section>
-              )}
-              <button
-                className="secondary-button"
-                disabled={busy}
-                onClick={() => void downloadEncryptedArchive()}
-                type="button"
-              >
-                Download encrypted backup
-              </button>
-              <p className="form-guidance">
-                Backups contain only authenticated encrypted vault state. Restore them from the
-                clean-profile recovery screen with the Recovery Kit.
-              </p>
-            </section>
-
-            <section className="security-section" aria-labelledby="compartment-title">
-              <h2 id="compartment-title">Sensitive compartments</h2>
-              {(["document", "credential"] as const).map((compartment) => {
-                const isOpen = screenState.unlockedCompartments.includes(compartment);
-                return (
-                  <div className="security-row" key={compartment}>
-                    <p>
-                      <strong>
-                        {compartment === "document" ? "Document" : "Credential"} compartment
-                      </strong>
-                      <span>
-                        {isOpen
-                          ? `${compartment} compartment is temporarily unlocked.`
-                          : `${compartment} compartment is sealed.`}
-                      </span>
-                    </p>
-                    {!isOpen ? (
-                      <button
-                        className="secondary-button compact-button"
-                        disabled={busy}
-                        onClick={() => {
-                          setStepUpMethod("master-password");
-                          setStepUpPassword("");
-                          setStepUpRecoveryKit("");
-                          setStepUpCompartment(compartment);
-                        }}
-                        type="button"
-                      >
-                        Unlock {compartment} compartment
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {stepUpCompartment !== null ? (
-                <form className="vault-form inset-form" onSubmit={confirmStepUp}>
+                  ))
+                )}
+                <form className="vault-form inset-form" onSubmit={saveItem}>
                   <label className="vault-field">
-                    <span>Step-up method</span>
+                    <span>Item type</span>
                     <select
                       className="vault-input"
-                      disabled={busy}
+                      disabled={editingItem !== null || busy}
                       onChange={(event) => {
-                        setStepUpPassword("");
-                        setStepUpRecoveryKit("");
-                        setStepUpMethod(event.target.value as "master-password" | "recovery-kit");
+                        clearItemForm();
+                        setItemType(event.target.value as "login" | "secure-note");
                       }}
-                      value={stepUpMethod}
+                      value={itemType}
                     >
-                      <option value="master-password">Master password</option>
-                      <option value="recovery-kit">Recovery Kit</option>
+                      <option value="login">Login</option>
+                      <option value="secure-note">Secure note</option>
                     </select>
                   </label>
-                  {stepUpMethod === "master-password" ? (
-                    <label className="vault-field">
-                      <span>Step-up master password</span>
-                      <input
-                        className="vault-input"
-                        disabled={busy}
-                        onChange={(event) => setStepUpPassword(event.target.value)}
-                        type="password"
-                        value={stepUpPassword}
-                      />
-                    </label>
-                  ) : (
-                    <label className="vault-field">
-                      <span>Step-up Recovery Kit</span>
-                      <textarea
-                        className="vault-input vault-textarea"
-                        disabled={busy}
-                        onChange={(event) => setStepUpRecoveryKit(event.target.value)}
-                        spellCheck={false}
-                        value={stepUpRecoveryKit}
-                      />
-                    </label>
-                  )}
-                  <button className="action-button" disabled={busy} type="submit">
-                    Confirm {stepUpCompartment} step-up
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => {
-                      setStepUpPassword("");
-                      setStepUpRecoveryKit("");
-                      setStepUpCompartment(null);
-                    }}
-                    type="button"
-                  >
-                    Cancel step-up
-                  </button>
-                  {screenState.deviceUnlock.available && selectedDeviceSlotId !== "" ? (
-                    <>
-                      {screenState.deviceUnlock.slots.length > 1 ? (
-                        <label className="vault-field">
-                          <span>Device step-up credential</span>
-                          <select
-                            className="vault-input"
-                            disabled={busy}
-                            onChange={(event) => setDeviceSlotId(event.target.value)}
-                            value={selectedDeviceSlotId}
-                          >
-                            {screenState.deviceUnlock.slots.map((slot, index) => (
-                              <option key={slot.id} value={slot.id}>
-                                Enrolled device {index + 1}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
-                      <button
-                        className="secondary-button"
-                        disabled={busy}
-                        onClick={() => void deviceStepUp(stepUpCompartment, selectedDeviceSlotId)}
-                        type="button"
-                      >
-                        Use enrolled device for step-up
-                      </button>
-                    </>
-                  ) : null}
-                </form>
-              ) : null}
-            </section>
-
-            <section className="security-section" aria-labelledby="device-title">
-              <h2 id="device-title">Device unlock</h2>
-              {screenState.deviceUnlock.available ? (
-                <form className="vault-form inset-form" onSubmit={enrollDevice}>
                   <label className="vault-field">
-                    <span>Master password for device enrollment</span>
+                    <span>Title</span>
                     <input
                       className="vault-input"
                       disabled={busy}
-                      onChange={(event) => setEnrollmentPassword(event.target.value)}
+                      onChange={(event) => setItemTitle(event.target.value)}
+                      value={itemTitle}
+                    />
+                  </label>
+                  {itemType === "login" ? (
+                    <>
+                      <label className="vault-field">
+                        <span>Username</span>
+                        <input
+                          autoComplete="off"
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setItemUsername(event.target.value)}
+                          value={itemUsername}
+                        />
+                      </label>
+                      <label className="vault-field">
+                        <span>Password</span>
+                        <input
+                          autoComplete="new-password"
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setItemPassword(event.target.value)}
+                          type="password"
+                          value={itemPassword}
+                        />
+                      </label>
+                      <button
+                        className="secondary-button"
+                        disabled={busy}
+                        onClick={() =>
+                          setItemPassword(
+                            generatePassword({
+                              alphabet:
+                                "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*",
+                              length: 24,
+                              random: {
+                                randomBytes(length) {
+                                  const output = new Uint8Array(length);
+                                  crypto.getRandomValues(output);
+                                  return output;
+                                },
+                              },
+                            }),
+                          )
+                        }
+                        type="button"
+                      >
+                        Generate strong password
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={busy}
+                        onClick={() =>
+                          setItemPassword(
+                            generatePassphrase({
+                              random: {
+                                randomBytes(length) {
+                                  const output = new Uint8Array(length);
+                                  crypto.getRandomValues(output);
+                                  return output;
+                                },
+                              },
+                              wordCount: 6,
+                              words: BUILT_IN_PASSPHRASE_WORDS,
+                            }),
+                          )
+                        }
+                        type="button"
+                      >
+                        Generate passphrase
+                      </button>
+                      <label className="vault-field">
+                        <span>Website addresses, one per line</span>
+                        <textarea
+                          className="vault-input vault-textarea"
+                          disabled={busy}
+                          onChange={(event) => setItemUris(event.target.value)}
+                          value={itemUris}
+                        />
+                      </label>
+                      <label className="vault-field">
+                        <span>Authenticator otpauth URI (optional)</span>
+                        <input
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setItemTotpUri(event.target.value)}
+                          spellCheck={false}
+                          value={itemTotpUri}
+                        />
+                      </label>
+                      <label className="vault-field">
+                        <span>Import authenticator QR image (optional)</span>
+                        <input
+                          accept="image/png,image/jpeg,image/webp"
+                          disabled={busy}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file === undefined) return;
+                            const Detector = (
+                              globalThis as unknown as {
+                                BarcodeDetector?: new (options: {
+                                  formats: string[];
+                                }) => {
+                                  detect(
+                                    source: unknown,
+                                  ): Promise<readonly { readonly rawValue?: string }[]>;
+                                };
+                              }
+                            ).BarcodeDetector;
+                            if (
+                              Detector === undefined ||
+                              globalThis.createImageBitmap === undefined
+                            ) {
+                              setTotpImportStatus(
+                                "QR scanning is unavailable here; paste the otpauth URI instead.",
+                              );
+                              return;
+                            }
+                            setTotpImportStatus("Reading QR image locally…");
+                            void createImageBitmap(file)
+                              .then(async (bitmap) => {
+                                try {
+                                  const parsed = await parseOtpAuthQr(
+                                    bitmap,
+                                    new Detector({ formats: ["qr_code"] }),
+                                  );
+                                  setItemTotpUri(parsed.uri);
+                                  setTotpImportStatus("Authenticator QR imported locally.");
+                                } finally {
+                                  bitmap.close();
+                                }
+                              })
+                              .catch(() =>
+                                setTotpImportStatus(
+                                  "No valid authenticator QR was found; no data was saved.",
+                                ),
+                              );
+                          }}
+                          type="file"
+                        />
+                      </label>
+                      {totpImportStatus ? (
+                        <p aria-live="polite" className="form-guidance">
+                          {totpImportStatus}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <label className="vault-field">
+                    <span>Folder (optional)</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setItemFolder(event.target.value)}
+                      value={itemFolder}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>Tags, comma separated</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setItemTags(event.target.value)}
+                      value={itemTags}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <input
+                      checked={itemFavorite}
+                      disabled={busy}
+                      onChange={(event) => setItemFavorite(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Favorite</span>
+                  </label>
+                  <label className="vault-field">
+                    <span>{itemType === "login" ? "Notes" : "Secure note"}</span>
+                    <textarea
+                      className="vault-input vault-textarea"
+                      disabled={busy}
+                      onChange={(event) => setItemBody(event.target.value)}
+                      value={itemBody}
+                    />
+                  </label>
+                  <button className="action-button" disabled={busy} type="submit">
+                    {editingItem === null ? "Save encrypted item" : "Save encrypted revision"}
+                  </button>
+                  {editingItem !== null ? (
+                    <button
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={clearItemForm}
+                      type="button"
+                    >
+                      Cancel edit
+                    </button>
+                  ) : null}
+                </form>
+              </section>
+            </div>
+
+            <div className="app-view" hidden={activeView !== "settings"}>
+              {client.syncGoogleDrive === undefined ? null : (
+                <section className="cloud-card" aria-labelledby="drive-title">
+                  <div className="cloud-card-heading">
+                    <span className="cloud-provider-mark" aria-hidden="true">
+                      G
+                    </span>
+                    <div>
+                      <h2 id="drive-title">Google Drive</h2>
+                      <p>Private app-data storage</p>
+                    </div>
+                  </div>
+                  <p className="form-guidance">
+                    Connect your Google account. Only encrypted vault data is uploaded.
+                  </p>
+                  <button
+                    className="action-button"
+                    disabled={busy || googleClientId.trim().length === 0}
+                    onClick={() => void syncGoogleDrive()}
+                    type="button"
+                  >
+                    Connect Google Drive
+                  </button>
+                  {googleClientId === "" ? (
+                    <details className="developer-setup">
+                      <summary>Developer setup required</summary>
+                      <label className="vault-field">
+                        <span>Google OAuth client ID</span>
+                        <input
+                          autoComplete="off"
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setGoogleClientId(event.target.value)}
+                          placeholder="…apps.googleusercontent.com"
+                          spellCheck={false}
+                          value={googleClientId}
+                        />
+                      </label>
+                      <p className="form-guidance">
+                        Production builds should set VITE_GOOGLE_CLIENT_ID. Redirect:{" "}
+                        {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/google/callback`}
+                      </p>
+                    </details>
+                  ) : null}
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={disconnectGoogleDrive}
+                    type="button"
+                  >
+                    Disconnect Google Drive
+                  </button>
+                  {driveStatus ? (
+                    <p aria-live="polite" className="form-guidance" role="status">
+                      {driveStatus}
+                    </p>
+                  ) : null}
+                </section>
+              )}
+
+              {client.syncOneDrive === undefined ? null : (
+                <section className="cloud-card" aria-labelledby="onedrive-title">
+                  <div className="cloud-card-heading">
+                    <span className="cloud-provider-mark microsoft-mark" aria-hidden="true">
+                      M
+                    </span>
+                    <div>
+                      <h2 id="onedrive-title">Microsoft OneDrive</h2>
+                      <p>Dedicated application folder</p>
+                    </div>
+                  </div>
+                  <p className="form-guidance">
+                    Connect your Microsoft account. Authorization uses PKCE and app-folder-only
+                    access.
+                  </p>
+                  <button
+                    className="action-button"
+                    disabled={busy || microsoftClientId.trim().length === 0}
+                    onClick={() => void syncOneDrive()}
+                    type="button"
+                  >
+                    Connect OneDrive
+                  </button>
+                  {microsoftClientId === "" ? (
+                    <details className="developer-setup">
+                      <summary>Developer setup required</summary>
+                      <label className="vault-field">
+                        <span>Microsoft Entra client ID</span>
+                        <input
+                          autoComplete="off"
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setMicrosoftClientId(event.target.value)}
+                          placeholder="00000000-0000-0000-0000-000000000000"
+                          spellCheck={false}
+                          value={microsoftClientId}
+                        />
+                      </label>
+                      <p className="form-guidance">
+                        Production builds should set VITE_MICROSOFT_CLIENT_ID. Redirect:{" "}
+                        {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/microsoft/callback`}
+                      </p>
+                    </details>
+                  ) : null}
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={disconnectOneDrive}
+                    type="button"
+                  >
+                    Disconnect OneDrive
+                  </button>
+                  {oneDriveStatus ? (
+                    <p aria-live="polite" className="form-guidance" role="status">
+                      {oneDriveStatus}
+                    </p>
+                  ) : null}
+                </section>
+              )}
+            </div>
+
+            <div className="app-view" hidden={activeView !== "tools"}>
+              <section className="security-section" aria-labelledby="health-title">
+                <h2 id="health-title">Password health</h2>
+                <p className="form-guidance">
+                  Weakness, reuse, and age are calculated only in this unlocked client. Breach
+                  checks are optional and send one SHA-1 hash prefix—not the password—to Pwned
+                  Passwords.
+                </p>
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={analyzeLocalPasswords}
+                  type="button"
+                >
+                  Analyze passwords locally
+                </button>
+                {items
+                  .filter(
+                    (item): item is Extract<VaultItemView, { type: "login" }> =>
+                      item.type === "login",
+                  )
+                  .map((item) => {
+                    const finding = healthFindings[item.id];
+                    const pwned = pwnedResults[item.id];
+                    return (
+                      <div className="security-row" key={`health-${item.id}`}>
+                        <p>
+                          <strong>{item.title}</strong>
+                          <span>
+                            {finding === undefined
+                              ? "Not analyzed"
+                              : [
+                                  finding.weak ? "weak" : "strength checks passed",
+                                  finding.reused ? "reused" : "not reused",
+                                  finding.ageDays === null
+                                    ? "age unknown"
+                                    : `${finding.ageDays} days since item update`,
+                                ].join(" · ")}
+                            {pwned?.status === "found"
+                              ? ` · found ${pwned.count} time(s) in the breach corpus`
+                              : pwned?.status === "not-found"
+                                ? " · not found in the breach corpus"
+                                : pwned?.status === "unavailable"
+                                  ? " · breach check unavailable"
+                                  : ""}
+                          </span>
+                        </p>
+                        <button
+                          className="secondary-button compact-button"
+                          disabled={busy}
+                          onClick={() => void checkPasswordExposure(item)}
+                          type="button"
+                        >
+                          Check breach corpus
+                        </button>
+                      </div>
+                    );
+                  })}
+                {healthStatus ? (
+                  <p aria-live="polite" className="form-guidance" role="status">
+                    {healthStatus}
+                  </p>
+                ) : null}
+              </section>
+
+              <section className="security-section" aria-labelledby="transfer-title">
+                <h2 id="transfer-title">Import and encrypted backup</h2>
+                <label className="vault-field">
+                  <span>Import format</span>
+                  <select
+                    className="vault-input"
+                    disabled={busy}
+                    onChange={(event) => {
+                      setImportSource(event.target.value as "bitwarden" | "csv");
+                      setImportPreview(null);
+                    }}
+                    value={importSource}
+                  >
+                    <option value="csv">Generic CSV</option>
+                    <option value="bitwarden">Bitwarden JSON</option>
+                  </select>
+                </label>
+                <label className="vault-field">
+                  <span>Import file contents</span>
+                  <textarea
+                    className="vault-input vault-textarea"
+                    disabled={busy}
+                    onChange={(event) => {
+                      setImportText(event.target.value);
+                      setImportPreview(null);
+                    }}
+                    value={importText}
+                  />
+                </label>
+                <button
+                  className="secondary-button"
+                  disabled={busy || importText.length === 0}
+                  onClick={previewImport}
+                  type="button"
+                >
+                  Preview import
+                </button>
+                {importPreview === null ? null : (
+                  <section aria-label="Import preview">
+                    <p>
+                      {importPreview.validCount} valid row(s). Duplicate warnings are unchecked by
+                      default.
+                    </p>
+                    {importPreview.rows.map((row) => (
+                      <label className="vault-field" key={row.index}>
+                        <input
+                          checked={selectedImportRows.has(row.index)}
+                          disabled={row.status !== "valid" || busy}
+                          onChange={(event) => {
+                            setSelectedImportRows((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) next.add(row.index);
+                              else next.delete(row.index);
+                              return next;
+                            });
+                          }}
+                          type="checkbox"
+                        />
+                        <span>
+                          {row.sourceLabel}: {row.status}
+                          {row.warnings.length ? ` — ${row.warnings.join(", ")}` : ""}
+                        </span>
+                      </label>
+                    ))}
+                    <button
+                      className="action-button"
+                      disabled={busy || selectedImportRows.size === 0}
+                      onClick={() => void commitImport()}
+                      type="button"
+                    >
+                      Import selected rows atomically
+                    </button>
+                  </section>
+                )}
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={() => void downloadEncryptedArchive()}
+                  type="button"
+                >
+                  Download encrypted backup
+                </button>
+                <p className="form-guidance">
+                  Backups contain only authenticated encrypted vault state. Restore them from the
+                  clean-profile recovery screen with the Recovery Kit.
+                </p>
+              </section>
+            </div>
+
+            <div className="app-view" hidden={activeView !== "settings"}>
+              <section className="security-section" aria-labelledby="compartment-title">
+                <h2 id="compartment-title">Sensitive compartments</h2>
+                {(["document", "credential"] as const).map((compartment) => {
+                  const isOpen = screenState.unlockedCompartments.includes(compartment);
+                  return (
+                    <div className="security-row" key={compartment}>
+                      <p>
+                        <strong>
+                          {compartment === "document" ? "Document" : "Credential"} compartment
+                        </strong>
+                        <span>
+                          {isOpen
+                            ? `${compartment} compartment is temporarily unlocked.`
+                            : `${compartment} compartment is sealed.`}
+                        </span>
+                      </p>
+                      {!isOpen ? (
+                        <button
+                          className="secondary-button compact-button"
+                          disabled={busy}
+                          onClick={() => {
+                            setStepUpMethod("master-password");
+                            setStepUpPassword("");
+                            setStepUpRecoveryKit("");
+                            setStepUpCompartment(compartment);
+                          }}
+                          type="button"
+                        >
+                          Unlock {compartment} compartment
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {stepUpCompartment !== null ? (
+                  <form className="vault-form inset-form" onSubmit={confirmStepUp}>
+                    <label className="vault-field">
+                      <span>Step-up method</span>
+                      <select
+                        className="vault-input"
+                        disabled={busy}
+                        onChange={(event) => {
+                          setStepUpPassword("");
+                          setStepUpRecoveryKit("");
+                          setStepUpMethod(event.target.value as "master-password" | "recovery-kit");
+                        }}
+                        value={stepUpMethod}
+                      >
+                        <option value="master-password">Master password</option>
+                        <option value="recovery-kit">Recovery Kit</option>
+                      </select>
+                    </label>
+                    {stepUpMethod === "master-password" ? (
+                      <label className="vault-field">
+                        <span>Step-up master password</span>
+                        <input
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setStepUpPassword(event.target.value)}
+                          type="password"
+                          value={stepUpPassword}
+                        />
+                      </label>
+                    ) : (
+                      <label className="vault-field">
+                        <span>Step-up Recovery Kit</span>
+                        <textarea
+                          className="vault-input vault-textarea"
+                          disabled={busy}
+                          onChange={(event) => setStepUpRecoveryKit(event.target.value)}
+                          spellCheck={false}
+                          value={stepUpRecoveryKit}
+                        />
+                      </label>
+                    )}
+                    <button className="action-button" disabled={busy} type="submit">
+                      Confirm {stepUpCompartment} step-up
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={() => {
+                        setStepUpPassword("");
+                        setStepUpRecoveryKit("");
+                        setStepUpCompartment(null);
+                      }}
+                      type="button"
+                    >
+                      Cancel step-up
+                    </button>
+                    {screenState.deviceUnlock.available && selectedDeviceSlotId !== "" ? (
+                      <>
+                        {screenState.deviceUnlock.slots.length > 1 ? (
+                          <label className="vault-field">
+                            <span>Device step-up credential</span>
+                            <select
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setDeviceSlotId(event.target.value)}
+                              value={selectedDeviceSlotId}
+                            >
+                              {screenState.deviceUnlock.slots.map((slot, index) => (
+                                <option key={slot.id} value={slot.id}>
+                                  Enrolled device {index + 1}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        <button
+                          className="secondary-button"
+                          disabled={busy}
+                          onClick={() => void deviceStepUp(stepUpCompartment, selectedDeviceSlotId)}
+                          type="button"
+                        >
+                          Use enrolled device for step-up
+                        </button>
+                      </>
+                    ) : null}
+                  </form>
+                ) : null}
+              </section>
+
+              <section className="security-section" aria-labelledby="device-title">
+                <h2 id="device-title">Device unlock</h2>
+                {screenState.deviceUnlock.available ? (
+                  <form className="vault-form inset-form" onSubmit={enrollDevice}>
+                    <label className="vault-field">
+                      <span>Master password for device enrollment</span>
+                      <input
+                        className="vault-input"
+                        disabled={busy}
+                        onChange={(event) => setEnrollmentPassword(event.target.value)}
+                        type="password"
+                        value={enrollmentPassword}
+                      />
+                    </label>
+                    <button className="secondary-button" disabled={busy} type="submit">
+                      Enroll this device with PRF
+                    </button>
+                  </form>
+                ) : (
+                  <p className="capability-note">
+                    WebAuthn PRF is unsupported on this surface. It is not emulated; password and
+                    Recovery Kit unlock remain available.
+                  </p>
+                )}
+                {screenState.deviceUnlock.slots.map((slot) => (
+                  <div className="security-row" key={slot.id}>
+                    <p>
+                      <strong>Enrolled device slot</strong>
+                      <span>
+                        Revocation prevents future use after updated state is available; it cannot
+                        erase keys already extracted from an unlocked device.
+                      </span>
+                    </p>
+                    <button
+                      className="danger-button compact-button"
+                      disabled={busy}
+                      onClick={() => void revokeDevice(slot.id)}
+                      type="button"
+                    >
+                      Revoke enrolled device
+                    </button>
+                  </div>
+                ))}
+              </section>
+
+              <section className="security-section" aria-labelledby="password-title">
+                <h2 id="password-title">Change master password</h2>
+                <form className="vault-form inset-form" onSubmit={changePassword}>
+                  <label className="vault-field">
+                    <span>Current master password</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setCurrentPassword(event.target.value)}
                       type="password"
-                      value={enrollmentPassword}
+                      value={currentPassword}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>New master password</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      type="password"
+                      value={newPassword}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>Confirm new master password</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setNewPasswordConfirmation(event.target.value)}
+                      type="password"
+                      value={newPasswordConfirmation}
                     />
                   </label>
                   <button className="secondary-button" disabled={busy} type="submit">
-                    Enroll this device with PRF
+                    Change master password
                   </button>
                 </form>
-              ) : (
-                <p className="capability-note">
-                  WebAuthn PRF is unsupported on this surface. It is not emulated; password and
-                  Recovery Kit unlock remain available.
-                </p>
-              )}
-              {screenState.deviceUnlock.slots.map((slot) => (
-                <div className="security-row" key={slot.id}>
-                  <p>
-                    <strong>Enrolled device slot</strong>
-                    <span>
-                      Revocation prevents future use after updated state is available; it cannot
-                      erase keys already extracted from an unlocked device.
-                    </span>
-                  </p>
-                  <button
-                    className="danger-button compact-button"
-                    disabled={busy}
-                    onClick={() => void revokeDevice(slot.id)}
-                    type="button"
-                  >
-                    Revoke enrolled device
-                  </button>
-                </div>
-              ))}
-            </section>
-
-            <section className="security-section" aria-labelledby="password-title">
-              <h2 id="password-title">Change master password</h2>
-              <form className="vault-form inset-form" onSubmit={changePassword}>
-                <label className="vault-field">
-                  <span>Current master password</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    type="password"
-                    value={currentPassword}
-                  />
-                </label>
-                <label className="vault-field">
-                  <span>New master password</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    type="password"
-                    value={newPassword}
-                  />
-                </label>
-                <label className="vault-field">
-                  <span>Confirm new master password</span>
-                  <input
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setNewPasswordConfirmation(event.target.value)}
-                    type="password"
-                    value={newPasswordConfirmation}
-                  />
-                </label>
-                <button className="secondary-button" disabled={busy} type="submit">
-                  Change master password
-                </button>
-              </form>
-            </section>
+              </section>
+            </div>
 
             <ErrorMessage error={error} />
             <div className="vault-actions">

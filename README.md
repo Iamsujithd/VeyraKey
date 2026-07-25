@@ -29,8 +29,8 @@ not expose Web Crypto or IndexedDB and therefore cannot operate the vault.
 4. Add `http://127.0.0.1:5173` as an authorized JavaScript origin.
 5. Add `http://127.0.0.1:5173/oauth/google/callback` as an authorized redirect URI.
 6. Copy the public client ID ending in `apps.googleusercontent.com`.
-7. Unlock the vault, paste that client ID under **Google Drive encrypted sync**, and select
-   **Connect and sync encrypted vault**.
+7. Set `VITE_GOOGLE_CLIENT_ID` to that value when starting or building the web app.
+8. Users can now select **Settings → Connect Google Drive** without entering developer details.
 
 The app requests only `https://www.googleapis.com/auth/drive.appdata`. The access token stays in
 memory and is discarded on disconnect or page restart. Each successful sync also updates an
@@ -44,12 +44,15 @@ Google Drive**.
 3. Add the redirect URI
    `http://127.0.0.1:5173/oauth/microsoft/callback`.
 4. Allow personal Microsoft accounts if you want consumer OneDrive support.
-5. Unlock the vault, paste the public application client ID under
-   **Microsoft OneDrive encrypted sync**, and select **Connect and sync with OneDrive**.
+5. Set `VITE_MICROSOFT_CLIENT_ID` to the public application client ID when starting or building.
+6. Users can now select **Settings → Connect OneDrive** without entering developer details.
 
 The web client uses OAuth authorization code with PKCE. Access tokens are retained only in memory.
 OneDrive receives authenticated ciphertext in the application's dedicated folder. A clean profile
 can restore from the encrypted recovery archive using the original Recovery Kit.
+
+OAuth client IDs are public application configuration, not user secrets. The Settings screen shows
+an advanced developer setup disclosure only when a build is missing one of these values.
 
 Google still observes account identity, request timing, object sizes, and access patterns. This
 portfolio build has not received an independent security audit; use synthetic data during review.

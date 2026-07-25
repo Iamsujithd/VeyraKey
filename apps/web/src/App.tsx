@@ -26,5 +26,14 @@ function createLocalVaultClient(): VaultClient {
 
 export function App({ client }: AppProps) {
   const [vaultClient] = useState(() => client ?? createLocalVaultClient());
-  return <VaultScreen client={vaultClient} surface="Web application" />;
+  return (
+    <VaultScreen
+      client={vaultClient}
+      providerConfiguration={{
+        googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        microsoftClientId: import.meta.env.VITE_MICROSOFT_CLIENT_ID,
+      }}
+      surface="Web application"
+    />
+  );
 }
