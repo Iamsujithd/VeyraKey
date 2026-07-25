@@ -12,10 +12,24 @@ import type { VaultClient as CoreVaultClient } from "@zk-wallet/vault";
 const DEVICE_ID_KEY = "zk-wallet-device-id-v1";
 const MAX_TOKEN_LENGTH = 8_192;
 const OAUTH_TIMEOUT_MILLISECONDS = 120_000;
+const GOOGLE_API_ORIGIN = "https://www.googleapis.com";
 
 interface OAuthToken {
   readonly accessToken: string;
   readonly expiresAt: number;
+}
+
+function googleDriveFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (!import.meta.env.DEV || (typeof input !== "string" && !(input instanceof URL))) {
+    return fetch(input, init);
+  }
+  const url = new URL(input.toString());
+  if (url.origin !== GOOGLE_API_ORIGIN) return fetch(input, init);
+  const localUrl = new URL(
+    `/__google_drive_api${url.pathname}${url.search}`,
+    window.location.origin,
+  );
+  return fetch(localUrl, init);
 }
 
 export function buildGoogleOAuthUrl(options: {
@@ -179,7 +193,7 @@ export function withGoogleDriveSync(
       );
       configuredClientId = clientId;
     }
-    return new GoogleDriveSyncProvider({ tokenProvider });
+    return new GoogleDriveSyncProvider({ fetch: googleDriveFetch, tokenProvider });
   }
   return Object.assign(service, {
     disconnectGoogleDrive() {

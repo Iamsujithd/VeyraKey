@@ -34,5 +34,12 @@ export default defineConfig({
   },
   server: {
     headers: developmentSecurityHeaders,
+    proxy: {
+      "/__google_drive_api": {
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/__google_drive_api/u, ""),
+        target: "https://www.googleapis.com",
+      },
+    },
   },
 });

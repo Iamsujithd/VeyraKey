@@ -309,6 +309,21 @@ function operationError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function cloudOperationError(provider: string, error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (
+      message.length > 0 &&
+      message.length <= 240 &&
+      !/[\r\n]/u.test(message) &&
+      !/access[_ -]?token|authorization:\s*bearer/iu.test(message)
+    ) {
+      return `${provider}: ${message}`;
+    }
+  }
+  return fallback;
+}
+
 export function VaultScreen({ client, providerConfiguration, surface }: VaultScreenProps) {
   const [screenState, setScreenState] = useState<ScreenState>({ status: "preparing" });
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -1105,7 +1120,11 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
             ? "Google Drive quota is exhausted. Local encrypted data remains available."
             : operationError(
                 error,
-                "Drive sync did not complete. You can keep working locally and retry when online.",
+                cloudOperationError(
+                  "Google Drive",
+                  error,
+                  "Drive sync did not complete. You can keep working locally and retry when online.",
+                ),
               ),
       );
     } finally {
