@@ -1103,7 +1103,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
           ? "Google authorization expired or was revoked. Connect again to retry."
           : code === "DRIVE_QUOTA"
             ? "Google Drive quota is exhausted. Local encrypted data remains available."
-            : "Drive sync did not complete. You can keep working locally and retry when online.",
+            : operationError(
+                error,
+                "Drive sync did not complete. You can keep working locally and retry when online.",
+              ),
       );
     } finally {
       setOperation(null);

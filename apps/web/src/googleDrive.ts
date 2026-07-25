@@ -195,7 +195,12 @@ export function withGoogleDriveSync(
       if (service.restoreEncryptedArchive === undefined) {
         throw new Error("Encrypted archive restore is unavailable");
       }
-      const archive = await drive(request.clientId.trim()).readEncryptedRecoveryArchive();
+      const provider = drive(request.clientId.trim());
+      // Start OAuth while this method is still executing in the user's click event. Waiting for
+      // an IndexedDB or provider operation first causes browsers to classify the popup as
+      // unsolicited and block it.
+      await tokenProvider?.getAccessToken();
+      const archive = await provider.readEncryptedRecoveryArchive();
       if (archive === null) throw new Error("Google Drive recovery archive was not found");
       return await service.restoreEncryptedArchive({
         archive,
@@ -209,6 +214,8 @@ export function withGoogleDriveSync(
       try {
         const clientId = request.clientId.trim();
         const provider = drive(clientId);
+        // Preserve transient user activation by opening OAuth before sync touches IndexedDB.
+        await tokenProvider?.getAccessToken();
         const result = await syncVaultItems({
           codec: createEncryptedVaultSyncCodec(cryptoProvider, material.rootKey, material.vaultId),
           deviceId: deviceId(),
