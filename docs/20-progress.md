@@ -4,7 +4,7 @@
 
 - **Documentation baseline:** Complete.
 - **Application implementation:** V1 feature implementation complete; portfolio release in review.
-- **Current implementation task:** Task 14 — private deployment complete; authenticated smoke and remaining external gates open.
+- **Current implementation task:** Task 14 — local-only release; remaining external gates open.
 - **Completed implementation tasks:** 13/14.
 - **Last updated:** 2026-07-25T13:10:00Z — Tasks 11–13 accepted; Task 14 reproducible local release assembled.
 
@@ -33,7 +33,7 @@
 | 11 | Focused import/encrypted backup | Complete | Strict CSV/Bitwarden preview, atomic rollback, encrypted full-history archive and clean-profile restore; `pnpm check` at 29 files/146 tests | None |
 | 12 | Password-health dashboard/HIBP | Complete | Local weak/reused/age analysis; prefix-only padded HIBP client; offline/malicious/oversize tests | Live corpus availability is external and fails visibly |
 | 13 | Whole-system hardening/accessibility | Complete | Property/chaos corpus, parser limits, CSP/permissions scan, SBOM, semantic UI coverage, chunk budgets/splitting, documented review | Representative-device and independent review remain release evidence, not claimed |
-| 14 | Portfolio deployment/release | In review | Private production v1 deployed; reproducible builds, Chrome/Firefox ZIPs, SBOM, hashes, smoke/demo/migration/rollback runbook | Authenticated live smoke, Google OAuth test account, real-browser matrix, store signing |
+| 14 | Portfolio deployment/release | In review | Reproducible local builds, Chrome/Firefox ZIPs, SBOM, hashes, smoke/demo/migration/rollback runbook | Hosting intentionally removed; Google OAuth test account, real-browser matrix, store signing |
 
 ## Completion record
 
@@ -314,11 +314,4 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - **Status:** In review.
 - **Local deliverables:** Static web and Worker dry-run outputs; reproducible Chrome and Firefox MV3 ZIPs; validated SBOM; release/security documentation; smoke/demo script; migration and rollback plan; and artifact checks integrated into CI.
 - **Artifact evidence:** Chrome ZIP SHA-256 `8b6cf4ce0f3a633fed1d63db6808f3b9e82d29f74a1c3ae15cf434f8b19de3c3`; Firefox ZIP SHA-256 `ef747b94918030963c1341b622bc767497536af7074ef4057fb6abb8c1fbf14d`; lockfile SHA-256 `a24196dab5f5273d68301c7dfc0bc7179dd5874f9d02c60b382dc9967280f3f8`.
-- **Open external gates:** Authenticated production smoke is awaiting owner sign-in; Google OAuth consent/domain/client and test account are unavailable; the real Chrome/Firefox/PRF matrix has not run; and neither extension ZIP is store-signed. Task 14 must not be marked complete until the evidence is attached.
-
-#### Private production deployment
-
-- **URL:** `https://zero-knowledge-wallet-v1.abhigurkar3303.chatgpt.site`
-- **Sites version:** 1, sourced from commit `debea3a306fd8613f1b27fd29e121754114f4d74`.
-- **Deployment result:** Production publication succeeded. The unauthenticated smoke test reached the expected owner-only “Continue with ChatGPT” boundary with no browser console errors.
-- **Remaining verification:** The owner must authorize the ChatGPT sign-in before the application UI can be smoke-tested. Google OAuth/account configuration, real Chrome/Firefox extension installation, WebAuthn PRF hardware coverage, store signing, and independent review remain separate gates.
+- **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth consent/domain/client and test account are unavailable; the real Chrome/Firefox/PRF matrix has not run; and neither extension ZIP is store-signed. Task 14 must not be marked complete until the applicable evidence is attached.

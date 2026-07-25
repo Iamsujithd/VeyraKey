@@ -9,6 +9,12 @@ const securityHeaders = {
   "X-Frame-Options": "DENY",
 } as const;
 
+const developmentSecurityHeaders = {
+  ...securityHeaders,
+  "Content-Security-Policy":
+    "default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; frame-src 'none'; object-src 'none'",
+} as const;
+
 export default defineConfig({
   build: {
     rollupOptions: {
@@ -27,6 +33,6 @@ export default defineConfig({
     headers: securityHeaders,
   },
   server: {
-    headers: securityHeaders,
+    headers: developmentSecurityHeaders,
   },
 });

@@ -10,7 +10,6 @@
   },
   "scripts": {
     "build": "pnpm --recursive --if-present run build",
-    "build:site": "pnpm --dir apps/web build && node tooling/build-sites.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts",
     "dev:api": "pnpm --dir apps/api dev",
     "dev:extension": "pnpm --dir apps/extension dev",

@@ -38,9 +38,7 @@ per-JavaScript-chunk ceiling, and CycloneDX SBOM validation.
 
 ## External gates that cannot be manufactured locally
 
-- The private production URL exists at
-  `https://zero-knowledge-wallet-v1.abhigurkar3303.chatgpt.site`; its authenticated application
-  smoke still requires the owner to authorize ChatGPT sign-in.
+- Hosted deployment is intentionally disabled. The current portfolio release is run locally.
 - Google OAuth consent/domain/client configuration and a real test-account matrix.
 - Chrome/Firefox store signing or acceptance.
 - Representative-device/browser/OS WebAuthn PRF and KDF measurements.

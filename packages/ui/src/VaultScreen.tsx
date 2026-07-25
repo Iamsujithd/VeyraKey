@@ -344,7 +344,10 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     void client
       .initialize()
       .then((nextState) => {
-        if (active && attempt === loadAttempt) setScreenState(nextState);
+        if (active && attempt === loadAttempt) {
+          setError(null);
+          setScreenState(nextState);
+        }
       })
       .catch(() => {
         if (active && attempt === loadAttempt) {
