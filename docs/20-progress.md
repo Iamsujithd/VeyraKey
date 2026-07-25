@@ -269,11 +269,14 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - The adapter receives only already encrypted sync envelopes. OAuth access tokens are requested per operation, retained only by the caller-owned in-memory token provider, and never sent to the application API.
 - Drive can observe object names, sizes, timing, account identity, and access patterns. Users can revoke access or delete the hidden app data, so independent encrypted exports remain necessary.
 - Drive does not provide the immutable compare-and-swap primitive required for correctness. A lost upload response may produce a duplicate object; authenticated revision identity and deterministic union make duplicate delivery safe.
-- The web client now accepts a user-supplied OAuth web client ID, opens consent for the exact
+- The web client uses a project-configured OAuth web client ID, opens consent for the exact
   `drive.appdata` scope, keeps access tokens only in memory, runs the production encrypted sync
   coordinator, uploads a Recovery-Kit-protected archive after successful sync, and supports direct
-  clean-profile Drive restore. A user-owned Google Cloud client and real test account are still
-  required to exercise Google’s external consent and quota behavior.
+  clean-profile Drive restore. A localhost Google Cloud OAuth client is registered in project
+  `gothic-module-490620-f4`, the Drive API and `drive.appdata` scope are enabled, and
+  `vvce23cseaiml0078@vvce.ac.in` is registered as a test user. The public client ID lives only in
+  the ignored `apps/web/.env.local`; production publishing, independent accounts, and quota
+  behavior remain external release gates.
 
 ### Task 7 — Secure MV3 extension sessions
 
@@ -320,7 +323,8 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - **Local deliverables:** Static web and Worker dry-run outputs; reproducible Chrome and Firefox MV3 ZIPs; validated SBOM; release/security documentation; smoke/demo script; migration and rollback plan; and artifact checks integrated into CI.
 - **Artifact evidence:** Chrome ZIP SHA-256 `dcfd72fe51cb42a7e5734db51e9a143fc82a8a330495a53560ac310c6030b5a9`; Firefox ZIP SHA-256 `bc6b5ca7ad14b780e325a50ca818bb949144f05dcdd1ac01910021dd761b9f36`; lockfile SHA-256 `910e7b1aaffe0b201afb55772adf07987d0d303985647562a02d2bcddeb2654e`.
 - **Latest validation:** `CI=true pnpm check` passes with 31 test files and 156 tests, all production targets, and artifact verification.
-- **Open external gates:** Hosting was intentionally removed in favor of localhost. OAuth code is
-  wired, but a user-owned Google Cloud client/test account is not available in the repository; the
-  real Chrome/Firefox/PRF matrix has not run; and neither extension ZIP is store-signed. Task 14
-  must not be marked complete until the applicable evidence is attached.
+- **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
+  is registered for localhost and its configured test account; Microsoft OAuth is blocked until
+  the current account has an Entra tenant/directory. The real Chrome/Firefox/PRF matrix has not
+  run, and neither extension ZIP is store-signed. Task 14 must not be marked complete until the
+  applicable evidence is attached.
