@@ -3,9 +3,9 @@
 ## Status
 
 - **Phase:** V1 implementation complete through Task 13; release evidence is in review.
-- **Current implementation task:** Task 14 — portfolio release (local artifacts complete; external gates open).
+- **Current implementation task:** Task 14 — private production deployment complete; authenticated smoke, OAuth, and browser/store gates open.
 - **Task 4 execution brief:** [`docs/31-task-4-continuation-brief.md`](docs/31-task-4-continuation-brief.md)
-- **Completed implementation tasks:** 13/14; Task 14 cannot be marked complete before its external gates.
+- **Completed implementation tasks:** 13/14; Task 14 is deployed privately but cannot be marked complete before its remaining external gates.
 - **Workspace state at documentation creation:** Greenfield; no application files existed.
 - **Primary plan:** [`docs/19-implementation-roadmap.md`](docs/19-implementation-roadmap.md)
 - **Progress tracker:** [`docs/20-progress.md`](docs/20-progress.md)
