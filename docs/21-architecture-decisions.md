@@ -211,6 +211,14 @@ Content from external sources was rephrased for compliance with licensing restri
 - **Consequences:** Local feature implementation can be accepted through Task 13, but Task 14 remains in review until actual hosted URLs, OAuth/domain/test-account evidence, the real-browser matrix, and any claimed store signing exist. Independent review is never implied.
 - **Rejected:** Fabricated deployment/OAuth/store evidence, calling local fixtures an external audit, weakening security parameters for performance scores, production source maps, and unbounded monolithic entry chunks.
 
+## ADR-034: Memory-only Google OAuth and Drive recovery archive
+
+- **Date:** 2026-07-25.
+- **Status:** Accepted for the completed Task 6 application wiring.
+- **Decision:** The localhost web client accepts a public Google OAuth web client ID, uses an exact localhost callback with a random state, requests only `drive.appdata`, and retains the bearer token only in the live page. An explicit unlocked-vault action exports a copied root session, encrypts and merges immutable revisions through the production sync codec, overwrites the controllable root copy, and uploads an authenticated encrypted full-history recovery archive. A clean profile can fetch that archive and authenticate it with the Recovery Kit before atomic restore and rewrapping under a new master password.
+- **Consequences:** Local vault operation remains independent of Google. Disconnect or page restart removes the memory token. Google observes account, traffic, size, and timing metadata. The fixed recovery archive is a convenience backup, not sync truth; immutable revisions remain canonical. OAuth consent and real-account behavior require the user’s Google Cloud project.
+- **Rejected:** OAuth tokens in localStorage/IndexedDB, broad Drive scope, application-server token exchange or vault relay, plaintext Drive exports, treating the mutable recovery archive as canonical history, silent background consent, and server recovery escrow.
+
 ## ADR-025: Task 5 provider-neutral deterministic sync core
 
 - **Date:** 2026-07-25.

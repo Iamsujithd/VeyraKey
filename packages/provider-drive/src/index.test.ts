@@ -98,6 +98,49 @@ describe("Google Drive appDataFolder provider", () => {
     });
   });
 
+  it("creates, reads, and replaces the encrypted recovery archive in appDataFolder", async () => {
+    let stored: { body: string; id: string; name: string } | undefined;
+    const requests: Array<{ init: RequestInit | undefined; url: string }> = [];
+    const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ init, url });
+      if (url.includes("alt=media")) return new Response(stored?.body ?? "", { status: 200 });
+      if (url.includes("/upload/") && init?.method === "PATCH") {
+        stored = { body: String(init.body), id: "backup", name: "zk-wallet-recovery-v1.backup" };
+        return json({ id: "backup" });
+      }
+      if (url.includes("/upload/")) {
+        const multipart = String(init?.body);
+        const marker = "Content-Type: application/json\r\n\r\n";
+        const bodyStart = multipart.lastIndexOf(marker);
+        const bodyEnd = multipart.indexOf("\r\n--", bodyStart + marker.length);
+        stored = {
+          body: multipart.slice(bodyStart + marker.length, bodyEnd),
+          id: "backup",
+          name: "zk-wallet-recovery-v1.backup",
+        };
+        return json({ id: "backup" });
+      }
+      return json({
+        files: stored === undefined ? [] : [{ id: stored.id, name: stored.name }],
+      });
+    };
+    const drive = provider(fetch as typeof globalThis.fetch).value;
+
+    await drive.writeEncryptedRecoveryArchive({ ciphertext: "first", version: 1 });
+    await expect(drive.readEncryptedRecoveryArchive()).resolves.toEqual({
+      ciphertext: "first",
+      version: 1,
+    });
+    await drive.writeEncryptedRecoveryArchive({ ciphertext: "second", version: 1 });
+    await expect(drive.readEncryptedRecoveryArchive()).resolves.toEqual({
+      ciphertext: "second",
+      version: 1,
+    });
+    expect(requests.some(({ init }) => init?.method === "PATCH")).toBe(true);
+    expect(requests.every(({ url }) => url.includes("googleapis.com"))).toBe(true);
+  });
+
   it("retries an upload whose committed response was lost", async () => {
     let uploadAttempts = 0;
     const fetch = async (input: string | URL | Request) => {

@@ -257,4 +257,67 @@ describe("VaultScreen", () => {
       ]),
     );
   });
+
+  it("connects Google Drive only after an explicit client ID and reports encrypted sync", async () => {
+    const vaultClient = client("unlocked");
+    const syncGoogleDrive = vi.fn(async () => ({
+      conflicts: [],
+      itemCount: 0,
+      quarantined: 0,
+      revisionCount: 2,
+      uploaded: 1,
+    }));
+    vaultClient.syncGoogleDrive = syncGoogleDrive;
+    vaultClient.disconnectGoogleDrive = vi.fn();
+    render(<VaultScreen client={vaultClient} surface="Web application" />);
+    await screen.findByRole("heading", { name: "Vault unlocked" });
+
+    const connect = screen.getByRole("button", { name: "Connect and sync encrypted vault" });
+    expect(connect).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Google OAuth web client ID"), {
+      target: { value: "fixture.apps.googleusercontent.com" },
+    });
+    expect(connect).toBeEnabled();
+    fireEvent.click(connect);
+
+    await waitFor(() =>
+      expect(syncGoogleDrive).toHaveBeenCalledWith({
+        clientId: "fixture.apps.googleusercontent.com",
+      }),
+    );
+    expect(await screen.findByText(/2 encrypted revision\(s\), 1 uploaded/u)).toBeInTheDocument();
+  });
+
+  it("restores a clean profile directly from the encrypted Drive recovery archive", async () => {
+    const vaultClient = client("needs-setup");
+    const restored = viewState("unlocked");
+    const restoreFromGoogleDrive = vi.fn(async () => restored);
+    vaultClient.restoreFromGoogleDrive = restoreFromGoogleDrive;
+    render(<VaultScreen client={vaultClient} surface="Web application" />);
+    await screen.findByRole("heading", { name: "Create your local vault" });
+    fireEvent.click(screen.getByRole("button", { name: "Restore from encrypted BYOS state" }));
+
+    fireEvent.change(screen.getByLabelText("Google OAuth web client ID"), {
+      target: { value: "fixture.apps.googleusercontent.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Recovery Kit"), {
+      target: { value: "recovery-fixture" },
+    });
+    fireEvent.change(screen.getByLabelText("New master password"), {
+      target: { value: "new-password" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new master password"), {
+      target: { value: "new-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Restore directly from Google Drive" }));
+
+    await waitFor(() =>
+      expect(restoreFromGoogleDrive).toHaveBeenCalledWith({
+        clientId: "fixture.apps.googleusercontent.com",
+        newMasterPassword: "new-password",
+        recoveryKit: "recovery-fixture",
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "Vault unlocked" })).toBeInTheDocument();
+  });
 });

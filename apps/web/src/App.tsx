@@ -6,18 +6,21 @@ import {
 import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
 import { createVaultService } from "@zk-wallet/vault";
 import { useState } from "react";
+import { withGoogleDriveSync } from "./googleDrive";
 
 export interface AppProps {
   readonly client?: VaultClient;
 }
 
 function createLocalVaultClient(): VaultClient {
-  return createVaultService({
-    crypto: createCryptoProvider(),
+  const crypto = createCryptoProvider();
+  const service = createVaultService({
+    crypto,
     devicePrf: createWebAuthnPrfProvider(),
     itemRepository: new IndexedDbItemRevisionRepository(),
     repository: new IndexedDbVaultHeaderRepository(),
   });
+  return withGoogleDriveSync(service, crypto);
 }
 
 export function App({ client }: AppProps) {

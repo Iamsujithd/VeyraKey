@@ -3,7 +3,7 @@
 ## Status
 
 - **Phase:** V1 implementation complete through Task 13; release evidence is in review.
-- **Current implementation task:** Task 14 — local-only portfolio release; OAuth and browser/store gates open.
+- **Current implementation task:** Task 14 — local-only portfolio release; real-account/browser/store evidence open.
 - **Task 4 execution brief:** [`docs/31-task-4-continuation-brief.md`](docs/31-task-4-continuation-brief.md)
 - **Completed implementation tasks:** 13/14; Task 14 remains local-only by user choice.
 - **Workspace state at documentation creation:** Greenfield; no application files existed.

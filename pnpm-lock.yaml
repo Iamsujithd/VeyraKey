@@ -106,6 +106,12 @@ importers:
       '@zk-wallet/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@zk-wallet/provider-drive':
+        specifier: workspace:*
+        version: link:../../packages/provider-drive
+      '@zk-wallet/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@zk-wallet/ui':
         specifier: workspace:*
         version: link:../../packages/ui

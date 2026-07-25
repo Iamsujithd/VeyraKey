@@ -80,6 +80,7 @@ export interface VaultClient {
     readonly title: string;
   }): Promise<VaultItemView>;
   deleteItem?(itemId: string, expectedRevisionId: string): Promise<void>;
+  disconnectGoogleDrive?(): void;
   enrollDevice(masterPassword: string): Promise<VaultViewState>;
   exportEncryptedArchive?(): Promise<unknown>;
   getState(): VaultViewState;
@@ -110,6 +111,11 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultViewState>;
+  restoreFromGoogleDrive?(request: {
+    readonly clientId: string;
+    readonly newMasterPassword: string;
+    readonly recoveryKit: string;
+  }): Promise<VaultViewState>;
   revokeDevice(slotId: string): Promise<VaultViewState>;
   searchItems?(query: string): Promise<readonly VaultItemView[]>;
   stepUpCompartment(
@@ -117,6 +123,7 @@ export interface VaultClient {
     credential: StepUpCredential,
   ): Promise<VaultViewState>;
   subscribe(listener: (state: VaultViewState) => void): () => void;
+  syncGoogleDrive?(request: { readonly clientId: string }): Promise<VaultSyncResult>;
   unlock(masterPassword: string): Promise<VaultViewState>;
   unlockWithDevice(slotId: string): Promise<VaultViewState>;
   unlockWithRecoveryKit(recoveryKit: string): Promise<VaultViewState>;
@@ -147,6 +154,17 @@ export interface VaultClient {
     },
   ): Promise<VaultItemView>;
   verifyRecoveryKit(recoveryKit: string): Promise<VaultViewState>;
+}
+
+export interface VaultSyncResult {
+  readonly conflicts: readonly {
+    readonly itemId: string;
+    readonly revisionIds: readonly string[];
+  }[];
+  readonly itemCount: number;
+  readonly quarantined: number;
+  readonly revisionCount: number;
+  readonly uploaded: number;
 }
 
 export type VaultItemView =
@@ -330,6 +348,8 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     {},
   );
   const [healthStatus, setHealthStatus] = useState("");
+  const [googleClientId, setGoogleClientId] = useState("");
+  const [driveStatus, setDriveStatus] = useState("");
   const recoveryContext = screenState.status === "unlocked" ? screenState.recovery.status : null;
   const itemRecoveryStatus = screenState.status === "unlocked" ? screenState.recovery.status : null;
 
@@ -510,6 +530,37 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
           error,
           "Unable to restore. Check the Recovery Kit and encrypted BYOS state.",
         ),
+      );
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function restoreGoogleDrive() {
+    if (client.restoreFromGoogleDrive === undefined || googleClientId.trim().length === 0) {
+      setError("Enter the Google OAuth web client ID before restoring from Drive.");
+      return;
+    }
+    if (restorePassword.length === 0 || restorePassword !== restoreConfirmation) {
+      setError("Enter matching new master passwords for the restored vault.");
+      return;
+    }
+    const request = {
+      clientId: googleClientId.trim(),
+      newMasterPassword: restorePassword,
+      recoveryKit: recoveryKitInput,
+    };
+    setRestorePassword("");
+    setRestoreConfirmation("");
+    setRecoveryKitInput("");
+    setOperation("restore");
+    setError(null);
+    try {
+      setScreenState(await client.restoreFromGoogleDrive(request));
+      setShowRestore(false);
+    } catch {
+      setError(
+        "Unable to restore from Google Drive. Check authorization, the Recovery Kit, and the recovery archive.",
       );
     } finally {
       setOperation(null);
@@ -985,6 +1036,40 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
     );
   }
 
+  async function syncGoogleDrive() {
+    if (client.syncGoogleDrive === undefined || googleClientId.trim().length === 0) {
+      setError("Enter the Google OAuth web client ID before connecting Drive.");
+      return;
+    }
+    setOperation("item");
+    setError(null);
+    setDriveStatus("Waiting for Google Drive authorization…");
+    try {
+      const result = await client.syncGoogleDrive({ clientId: googleClientId });
+      setItems((await client.listItems?.()) ?? []);
+      setDriveStatus(
+        `Sync complete: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded, ${result.conflicts.length} conflict(s), ${result.quarantined} quarantined.`,
+      );
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      setDriveStatus(
+        code === "DRIVE_AUTH"
+          ? "Google authorization expired or was revoked. Connect again to retry."
+          : code === "DRIVE_QUOTA"
+            ? "Google Drive quota is exhausted. Local encrypted data remains available."
+            : "Drive sync did not complete. You can keep working locally and retry when online.",
+      );
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  function disconnectGoogleDrive() {
+    client.disconnectGoogleDrive?.();
+    setDriveStatus("Google Drive disconnected. No OAuth token was persisted.");
+  }
+
   return (
     <main
       className="vault-shell"
@@ -1110,6 +1195,20 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
               </p>
             </div>
             <form className="vault-form" onSubmit={restoreVault}>
+              {client.restoreFromGoogleDrive === undefined ? null : (
+                <label className="vault-field">
+                  <span>Google OAuth web client ID</span>
+                  <input
+                    autoComplete="off"
+                    className="vault-input"
+                    disabled={busy}
+                    onChange={(event) => setGoogleClientId(event.target.value)}
+                    placeholder="…apps.googleusercontent.com"
+                    spellCheck={false}
+                    value={googleClientId}
+                  />
+                </label>
+              )}
               <label className="vault-field">
                 <span>Encrypted BYOS vault state</span>
                 <textarea
@@ -1154,6 +1253,16 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
               <button className="action-button" disabled={busy} type="submit">
                 Restore and rewrap locally
               </button>
+              {client.restoreFromGoogleDrive === undefined ? null : (
+                <button
+                  className="secondary-button"
+                  disabled={busy || googleClientId.trim().length === 0}
+                  onClick={() => void restoreGoogleDrive()}
+                  type="button"
+                >
+                  Restore directly from Google Drive
+                </button>
+              )}
               <button
                 className="secondary-button"
                 disabled={busy}
@@ -1675,6 +1784,54 @@ export function VaultScreen({ client, surface }: VaultScreenProps) {
                 ) : null}
               </form>
             </section>
+
+            {client.syncGoogleDrive === undefined ? null : (
+              <section className="security-section" aria-labelledby="drive-title">
+                <h2 id="drive-title">Google Drive encrypted sync</h2>
+                <p className="form-guidance">
+                  Drive stores authenticated ciphertext in its hidden app-data folder. The OAuth
+                  token stays only in memory; Google can still observe account, size, and timing
+                  metadata.
+                </p>
+                <label className="vault-field">
+                  <span>Google OAuth web client ID</span>
+                  <input
+                    autoComplete="off"
+                    className="vault-input"
+                    disabled={busy}
+                    onChange={(event) => setGoogleClientId(event.target.value)}
+                    placeholder="…apps.googleusercontent.com"
+                    spellCheck={false}
+                    value={googleClientId}
+                  />
+                </label>
+                <p className="form-guidance">
+                  Configure this exact redirect URI in Google Cloud:{" "}
+                  {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/google/callback`}
+                </p>
+                <button
+                  className="action-button"
+                  disabled={busy || googleClientId.trim().length === 0}
+                  onClick={() => void syncGoogleDrive()}
+                  type="button"
+                >
+                  Connect and sync encrypted vault
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={disconnectGoogleDrive}
+                  type="button"
+                >
+                  Disconnect Google Drive
+                </button>
+                {driveStatus ? (
+                  <p aria-live="polite" className="form-guidance" role="status">
+                    {driveStatus}
+                  </p>
+                ) : null}
+              </section>
+            )}
 
             <section className="security-section" aria-labelledby="health-title">
               <h2 id="health-title">Password health</h2>

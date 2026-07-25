@@ -27,6 +27,13 @@ per-JavaScript-chunk ceiling, and CycloneDX SBOM validation.
 8. With a configured test OAuth client only, verify Drive sync, clean-profile recovery, quota,
    offline, expiry, and revocation states.
 
+## Local Google OAuth configuration
+
+Enable the Google Drive API, configure an OAuth consent test user, and create a Web application
+client. Register `http://127.0.0.1:5173` as the JavaScript origin and
+`http://127.0.0.1:5173/oauth/google/callback` as the redirect. Paste the public client ID into the
+unlocked vault; no client secret belongs in this browser application.
+
 ## Migration and rollback
 
 - IndexedDB migrations are forward-only and versioned. Before upgrading, export an encrypted

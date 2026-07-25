@@ -8,6 +8,8 @@ const FILE_PREFIX = "zkv1_";
 const FILE_SUFFIX = ".sync";
 const LOCATOR_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
 const MAX_OBJECT_BYTES = 16_777_216;
+const MAX_BACKUP_BYTES = 67_108_864;
+const RECOVERY_ARCHIVE_NAME = "zk-wallet-recovery-v1.backup";
 
 export interface DriveAccessTokenProvider {
   getAccessToken(): Promise<string>;
@@ -291,6 +293,72 @@ export class GoogleDriveSyncProvider implements SyncProvider {
       method: "POST",
     });
     return "created";
+  }
+
+  async readEncryptedRecoveryArchive(): Promise<unknown | null> {
+    const files = await this.#listFiles(RECOVERY_ARCHIVE_NAME);
+    if (files.length === 0) return null;
+    if (files.length !== 1) {
+      throw new DriveProviderError(
+        "DRIVE_COLLISION",
+        "Google Drive contains multiple recovery archives",
+      );
+    }
+    const response = await this.#request(
+      `${API_ROOT}/files/${encodeURIComponent(files[0]?.id ?? "")}?alt=media`,
+    );
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BACKUP_BYTES) {
+      throw new DriveProviderError("DRIVE_CORRUPT_RESPONSE", "Recovery archive is too large");
+    }
+    const body = await response.text();
+    if (new TextEncoder().encode(body).byteLength > MAX_BACKUP_BYTES) {
+      throw new DriveProviderError("DRIVE_CORRUPT_RESPONSE", "Recovery archive is too large");
+    }
+    return parseJson(body);
+  }
+
+  async writeEncryptedRecoveryArchive(archive: unknown): Promise<void> {
+    const body = JSON.stringify(archive);
+    if (new TextEncoder().encode(body).byteLength > MAX_BACKUP_BYTES) {
+      throw new DriveProviderError("DRIVE_INVALID_INPUT", "Recovery archive is too large");
+    }
+    const files = await this.#listFiles(RECOVERY_ARCHIVE_NAME);
+    if (files.length > 1) {
+      throw new DriveProviderError(
+        "DRIVE_COLLISION",
+        "Google Drive contains multiple recovery archives",
+      );
+    }
+    const existing = files[0];
+    if (existing !== undefined) {
+      await this.#request(
+        `${UPLOAD_ROOT}/files/${encodeURIComponent(existing.id)}?uploadType=media`,
+        {
+          body,
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        },
+      );
+      return;
+    }
+    const boundary = `zk_wallet_backup_${crypto.randomUUID().replaceAll("-", "")}`;
+    const metadata = JSON.stringify({
+      appProperties: { schema: "zk-wallet-recovery-v1" },
+      name: RECOVERY_ARCHIVE_NAME,
+      parents: ["appDataFolder"],
+    });
+    const multipart = [
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}`,
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}`,
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+    await this.#request(`${UPLOAD_ROOT}/files?uploadType=multipart&fields=id`, {
+      body: multipart,
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      method: "POST",
+    });
   }
 
   async getStartCursor(): Promise<string> {

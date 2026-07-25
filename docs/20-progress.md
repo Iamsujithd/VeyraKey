@@ -4,9 +4,9 @@
 
 - **Documentation baseline:** Complete.
 - **Application implementation:** V1 feature implementation complete; portfolio release in review.
-- **Current implementation task:** Task 14 — local-only release; remaining external gates open.
+- **Current implementation task:** Task 14 — local-only release; real-account/browser/store evidence open.
 - **Completed implementation tasks:** 13/14.
-- **Last updated:** 2026-07-25T13:10:00Z — Tasks 11–13 accepted; Task 14 reproducible local release assembled.
+- **Last updated:** 2026-07-25T14:01:00Z — Real web-client Google Drive sync/recovery wiring accepted; local release rebuilt.
 
 ## Status definitions
 
@@ -25,7 +25,7 @@
 | 3 | Recovery, compartments, PRF unlock | Complete | TDD red evidence retained; `pnpm check` passes; 18 test files/78 tests; semantic review approved; rebuilt client artifacts scanned | Real-browser/authenticator PRF matrix remains a feature/release gate, not an implementation blocker |
 | 4 | Encrypted login/note CRUD | Complete | `pnpm check` passes; 20 test files/86 tests; encrypted immutable CRUD/restart/concurrency/plaintext inspection; web and both MV3 builds | None |
 | 5 | Immutable sync engine | Complete | `pnpm check` passes; 22 test files/97 tests; encrypted two-device convergence, HLC/DAG/conflicts, retry/quarantine, durable queue, snapshots/checkpoints, conflict UI | None |
-| 6 | Google Drive BYOS | Complete | Focused provider suite plus full `pnpm check`; appDataFolder-only adapter, encrypted clean-profile recovery | Public OAuth consent/test account remains a release gate |
+| 6 | Google Drive BYOS | Complete | Real web-client OAuth/sync/restore wiring; appDataFolder-only adapter; encrypted recovery archive; provider and UI suites | User-owned OAuth client/test-account run remains external evidence |
 | 7 | Secure MV3 extension sessions | Complete | `pnpm check`; authenticated restart resume, trusted storage/sender tests, multi-context lock | Real-browser suspension matrix remains a release gate |
 | 8 | Origin-safe autofill/capture | Complete | Exact-origin/IDN policy, activeTab fill, confirmed save/update, hostile context tests | Real-browser fixture matrix remains a release gate |
 | 9 | Password generation/TOTP/clipboard | Complete | RFC vectors, encrypted TOTP fields, QR/URI import, generator and clipboard tests | Native QR capability varies and fails visibly |
@@ -33,7 +33,7 @@
 | 11 | Focused import/encrypted backup | Complete | Strict CSV/Bitwarden preview, atomic rollback, encrypted full-history archive and clean-profile restore; `pnpm check` at 29 files/146 tests | None |
 | 12 | Password-health dashboard/HIBP | Complete | Local weak/reused/age analysis; prefix-only padded HIBP client; offline/malicious/oversize tests | Live corpus availability is external and fails visibly |
 | 13 | Whole-system hardening/accessibility | Complete | Property/chaos corpus, parser limits, CSP/permissions scan, SBOM, semantic UI coverage, chunk budgets/splitting, documented review | Representative-device and independent review remain release evidence, not claimed |
-| 14 | Portfolio deployment/release | In review | Reproducible local builds, Chrome/Firefox ZIPs, SBOM, hashes, smoke/demo/migration/rollback runbook | Hosting intentionally removed; Google OAuth test account, real-browser matrix, store signing |
+| 14 | Portfolio deployment/release | In review | Reproducible local builds, Chrome/Firefox ZIPs, SBOM, hashes, runbook, operational Drive setup guide | Hosting intentionally removed; Google test account, real-browser matrix, store signing |
 
 ## Completion record
 
@@ -268,7 +268,11 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - The adapter receives only already encrypted sync envelopes. OAuth access tokens are requested per operation, retained only by the caller-owned in-memory token provider, and never sent to the application API.
 - Drive can observe object names, sizes, timing, account identity, and access patterns. Users can revoke access or delete the hidden app data, so independent encrypted exports remain necessary.
 - Drive does not provide the immutable compare-and-swap primitive required for correctness. A lost upload response may produce a duplicate object; authenticated revision identity and deterministic union make duplicate delivery safe.
-- A production Google OAuth client, consent-screen approval, and real test-account browser run are external release gates and are not claimed by the fake-provider suite.
+- The web client now accepts a user-supplied OAuth web client ID, opens consent for the exact
+  `drive.appdata` scope, keeps access tokens only in memory, runs the production encrypted sync
+  coordinator, uploads a Recovery-Kit-protected archive after successful sync, and supports direct
+  clean-profile Drive restore. A user-owned Google Cloud client and real test account are still
+  required to exercise Google’s external consent and quota behavior.
 
 ### Task 7 — Secure MV3 extension sessions
 
@@ -313,5 +317,9 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 
 - **Status:** In review.
 - **Local deliverables:** Static web and Worker dry-run outputs; reproducible Chrome and Firefox MV3 ZIPs; validated SBOM; release/security documentation; smoke/demo script; migration and rollback plan; and artifact checks integrated into CI.
-- **Artifact evidence:** Chrome ZIP SHA-256 `8b6cf4ce0f3a633fed1d63db6808f3b9e82d29f74a1c3ae15cf434f8b19de3c3`; Firefox ZIP SHA-256 `ef747b94918030963c1341b622bc767497536af7074ef4057fb6abb8c1fbf14d`; lockfile SHA-256 `a24196dab5f5273d68301c7dfc0bc7179dd5874f9d02c60b382dc9967280f3f8`.
-- **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth consent/domain/client and test account are unavailable; the real Chrome/Firefox/PRF matrix has not run; and neither extension ZIP is store-signed. Task 14 must not be marked complete until the applicable evidence is attached.
+- **Artifact evidence:** Chrome ZIP SHA-256 `dcfd72fe51cb42a7e5734db51e9a143fc82a8a330495a53560ac310c6030b5a9`; Firefox ZIP SHA-256 `bc6b5ca7ad14b780e325a50ca818bb949144f05dcdd1ac01910021dd761b9f36`; lockfile SHA-256 `910e7b1aaffe0b201afb55772adf07987d0d303985647562a02d2bcddeb2654e`.
+- **Latest validation:** `CI=true pnpm check` passes with 31 test files and 156 tests, all production targets, and artifact verification.
+- **Open external gates:** Hosting was intentionally removed in favor of localhost. OAuth code is
+  wired, but a user-owned Google Cloud client/test account is not available in the repository; the
+  real Chrome/Firefox/PRF matrix has not run; and neither extension ZIP is store-signed. Task 14
+  must not be marked complete until the applicable evidence is attached.
