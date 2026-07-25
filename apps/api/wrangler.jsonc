@@ -1,0 +1,6 @@
+{
+  "name": "zero-knowledge-wallet-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-05",
+  "workers_dev": true
+}

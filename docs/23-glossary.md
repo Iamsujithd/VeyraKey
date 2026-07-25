@@ -1,0 +1,56 @@
+# Glossary
+
+- **AEAD:** Authenticated Encryption with Associated Data; provides confidentiality and integrity for ciphertext plus bound metadata.
+- **API Setu:** Indian government/enterprise API discovery and integration platform.
+- **Argon2id:** Memory-hard password-based key derivation function selected for master-password derivation.
+- **BBS:** Signature/proof scheme supporting selective disclosure and unlinkable derived proofs under specific profiles.
+- **BYOS:** Bring Your Own Storage; the user's personal cloud provider is the encrypted source of truth.
+- **CAS:** Compare-and-swap; a strong conditional-write mechanism not assumed for Drive correctness.
+- **Ciphertext relay:** Temporary server storage that cannot be decrypted by the server.
+- **Compartment:** Vault security domain with a separate key and policy, such as documents or credentials.
+- **Conflict copy:** Explicit item preserving an unsafe concurrent edit rather than silently choosing one.
+- **Credential firewall:** UX/policy boundary that validates offers/requests and explains identity, purpose, claims, correlation, network activity, and trust before consent.
+- **Credential envelope:** Format-neutral encrypted record preserving original credential bytes and verification evidence.
+- **DCQL:** Digital Credentials Query Language used by OpenID4VP to request credentials/claims.
+- **DigiLocker:** Government of India digital document wallet/ecosystem; official integration is access gated.
+- **Digital Credentials API:** Emerging web API for browser-mediated credential issuance/presentation.
+- **D1:** Cloudflare edge SQL database used only for minimal control-plane metadata.
+- **DPoP:** OAuth proof-of-possession mechanism for sender-constraining tokens.
+- **E2EE:** End-to-end encryption; plaintext is available only at authorized endpoints.
+- **Exposure graph:** Encrypted local graph of documents/claims disclosed to recipients/verifiers and their purposes/expiry.
+- **HLC:** Hybrid Logical Clock used to represent causal ordering without trusting wall-clock time alone.
+- **Holder:** Entity possessing a credential and generating a presentation.
+- **Holder binding:** Cryptographic/claim mechanism connecting a credential presentation to its legitimate holder.
+- **Issuer:** Entity that creates and signs/asserts a credential.
+- **Item DEK:** Random per-item data-encryption key.
+- **JSON-LD:** JSON serialization for linked data used by W3C VC profiles; remote contexts require strict policy.
+- **KEK:** Key-encryption key used to wrap another key.
+- **KDF:** Key derivation function.
+- **Key slot:** Versioned wrapped-key record associated with a master password, Recovery Kit, or device unlock method.
+- **mdoc:** ISO mobile document format family, commonly associated with mobile driving licences.
+- **MV3:** Browser extension Manifest Version 3.
+- **OID4VCI:** OpenID for Verifiable Credential Issuance.
+- **OID4VP:** OpenID for Verifiable Presentations.
+- **Opaque locator:** Random provider/server identifier that does not reveal item semantics.
+- **Passkey:** WebAuthn discoverable credential; this project may manage software passkeys where compatible.
+- **PRF:** WebAuthn pseudo-random function extension used for cryptographically sound device unlock when supported.
+- **Presentation:** Credential or derived proof shared with a verifier.
+- **R2:** Cloudflare object storage used for temporary encrypted Secure Send payloads.
+- **Recovery Kit:** User-held high-entropy secret capable of independently unwrapping vault/compartment keys.
+- **Revision DAG:** Directed acyclic graph of immutable item revisions and their parent relationships.
+- **RP / RP ID:** WebAuthn relying party and its domain-scoped identifier.
+- **SD-JWT:** Selective Disclosure JSON Web Token standardized by RFC 9901.
+- **SD-JWT VC:** Draft credential profile using SD-JWT; exact version must be pinned.
+- **Secure Send:** Temporary E2EE snapshot transfer; recipient imports an independent copy.
+- **Snapshot:** Rebuildable encrypted acceleration view of revision state, not canonical history.
+- **Status list:** Signed bulk representation of credential revocation/suspension state.
+- **Step-up authentication:** Fresh stronger authorization before unlocking sensitive compartments/actions.
+- **Tombstone:** Immutable deletion revision retained for safe multi-device convergence.
+- **TOTP:** Time-based one-time password.
+- **Trust pack:** Signed/versioned ecosystem policy identifying trusted issuers/anchors and their authorized credential types.
+- **VC:** Verifiable Credential.
+- **VEK / root vault key:** Random root key used to protect ordinary vault key metadata; not derived directly as the sole result of the password.
+- **Verifier:** Entity requesting and evaluating a credential presentation.
+- **WebDAV:** HTTP-based remote file management protocol used as the first generic BYOS adapter.
+- **WXT:** Framework selected for shared Chromium/Firefox extension development.
+- **Zero knowledge:** In this project, the service operator lacks keys to decrypt user vault content; it does not mean all protocols are zero-knowledge proofs or that traffic metadata is hidden.

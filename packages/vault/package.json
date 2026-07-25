@@ -1,0 +1,16 @@
+{
+  "name": "@zk-wallet/vault",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@scure/base": "catalog:",
+    "@zk-wallet/crypto": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

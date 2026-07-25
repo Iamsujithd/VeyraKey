@@ -1,0 +1,17 @@
+{
+  "name": "@zk-wallet/persistence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zk-wallet/crypto": "workspace:*",
+    "@zk-wallet/sync": "workspace:*",
+    "@zk-wallet/vault": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

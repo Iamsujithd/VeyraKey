@@ -1,0 +1,42 @@
+html,
+body,
+#root {
+  width: 390px;
+  min-width: 390px;
+  min-height: 590px;
+}
+
+.vault-shell {
+  min-height: 590px;
+  padding: 12px;
+}
+
+.vault-card {
+  padding: 20px;
+  border-radius: 20px;
+}
+
+.vault-header {
+  align-items: flex-start;
+}
+
+.foundation-status {
+  margin-top: 6px;
+  font-size: 0;
+}
+
+.lock-illustration {
+  margin-top: 42px;
+}
+
+.vault-copy h1 {
+  font-size: 34px;
+}
+
+.vault-description {
+  font-size: 14px;
+}
+
+.vault-footer {
+  flex-wrap: wrap;
+}
