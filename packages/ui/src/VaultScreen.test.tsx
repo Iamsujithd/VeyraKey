@@ -71,7 +71,13 @@ function client(initialStatus: "needs-setup" | "locked" | "unlocked"): VaultClie
 describe("VaultScreen", () => {
   it("creates a local vault through an accessible setup form", async () => {
     const vaultClient = client("needs-setup");
-    render(<VaultScreen client={vaultClient} surface="Web application" />);
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Web application"
+      />,
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent(/preparing vault/i);
     expect(
@@ -272,16 +278,17 @@ describe("VaultScreen", () => {
     }));
     vaultClient.syncGoogleDrive = syncGoogleDrive;
     vaultClient.disconnectGoogleDrive = vi.fn();
-    render(<VaultScreen client={vaultClient} surface="Web application" />);
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Web application"
+      />,
+    );
     await screen.findByRole("heading", { name: "Vault unlocked" });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
     const connect = screen.getByRole("button", { name: "Connect Google Drive" });
-    expect(connect).toBeDisabled();
-    fireEvent.click(screen.getByText("Developer setup required"));
-    fireEvent.change(screen.getByLabelText("Google OAuth client ID"), {
-      target: { value: "fixture.apps.googleusercontent.com" },
-    });
     expect(connect).toBeEnabled();
     fireEvent.click(connect);
 
@@ -298,13 +305,16 @@ describe("VaultScreen", () => {
     const restored = viewState("unlocked");
     const restoreFromGoogleDrive = vi.fn(async () => restored);
     vaultClient.restoreFromGoogleDrive = restoreFromGoogleDrive;
-    render(<VaultScreen client={vaultClient} surface="Web application" />);
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Web application"
+      />,
+    );
     await screen.findByRole("heading", { name: "Create your local vault" });
     fireEvent.click(screen.getByRole("button", { name: "Restore from encrypted BYOS state" }));
 
-    fireEvent.change(screen.getByLabelText("Google OAuth web client ID"), {
-      target: { value: "fixture.apps.googleusercontent.com" },
-    });
     fireEvent.change(screen.getByLabelText("Recovery Kit"), {
       target: { value: "recovery-fixture" },
     });

@@ -359,12 +359,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     {},
   );
   const [healthStatus, setHealthStatus] = useState("");
-  const [googleClientId, setGoogleClientId] = useState(
-    providerConfiguration?.googleClientId?.trim() ?? "",
-  );
-  const [microsoftClientId, setMicrosoftClientId] = useState(
-    providerConfiguration?.microsoftClientId?.trim() ?? "",
-  );
+  const googleClientId = providerConfiguration?.googleClientId?.trim() ?? "";
+  const microsoftClientId = providerConfiguration?.microsoftClientId?.trim() ?? "";
   const [driveStatus, setDriveStatus] = useState("");
   const [oneDriveStatus, setOneDriveStatus] = useState("");
   const [activeView, setActiveView] = useState<"settings" | "tools" | "vault">("vault");
@@ -556,7 +552,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
   async function restoreGoogleDrive() {
     if (client.restoreFromGoogleDrive === undefined || googleClientId.trim().length === 0) {
-      setError("Enter the Google OAuth web client ID before restoring from Drive.");
+      setError("Google Drive is not configured in this app build.");
       return;
     }
     if (restorePassword.length === 0 || restorePassword !== restoreConfirmation) {
@@ -587,7 +583,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
   async function restoreOneDrive() {
     if (client.restoreFromOneDrive === undefined || microsoftClientId.trim().length === 0) {
-      setError("Enter the Microsoft Entra application client ID before restoring from OneDrive.");
+      setError("OneDrive is not configured in this app build.");
       return;
     }
     if (restorePassword.length === 0 || restorePassword !== restoreConfirmation) {
@@ -1087,7 +1083,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
   async function syncGoogleDrive() {
     if (client.syncGoogleDrive === undefined || googleClientId.trim().length === 0) {
-      setError("Enter the Google OAuth web client ID before connecting Drive.");
+      setError("Google Drive is not configured in this app build.");
       return;
     }
     setOperation("item");
@@ -1121,7 +1117,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
   async function syncOneDrive() {
     if (client.syncOneDrive === undefined || microsoftClientId.trim().length === 0) {
-      setError("Enter the Microsoft Entra application client ID before connecting OneDrive.");
+      setError("OneDrive is not configured in this app build.");
       return;
     }
     setOperation("item");
@@ -1278,34 +1274,6 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
               </p>
             </div>
             <form className="vault-form" onSubmit={restoreVault}>
-              {client.restoreFromGoogleDrive === undefined ? null : (
-                <label className="vault-field">
-                  <span>Google OAuth web client ID</span>
-                  <input
-                    autoComplete="off"
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setGoogleClientId(event.target.value)}
-                    placeholder="…apps.googleusercontent.com"
-                    spellCheck={false}
-                    value={googleClientId}
-                  />
-                </label>
-              )}
-              {client.restoreFromOneDrive === undefined ? null : (
-                <label className="vault-field">
-                  <span>Microsoft Entra application client ID</span>
-                  <input
-                    autoComplete="off"
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => setMicrosoftClientId(event.target.value)}
-                    placeholder="00000000-0000-0000-0000-000000000000"
-                    spellCheck={false}
-                    value={microsoftClientId}
-                  />
-                </label>
-              )}
               <label className="vault-field">
                 <span>Encrypted BYOS vault state</span>
                 <textarea
@@ -1931,25 +1899,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     Connect Google Drive
                   </button>
                   {googleClientId === "" ? (
-                    <details className="developer-setup">
-                      <summary>Developer setup required</summary>
-                      <label className="vault-field">
-                        <span>Google OAuth client ID</span>
-                        <input
-                          autoComplete="off"
-                          className="vault-input"
-                          disabled={busy}
-                          onChange={(event) => setGoogleClientId(event.target.value)}
-                          placeholder="…apps.googleusercontent.com"
-                          spellCheck={false}
-                          value={googleClientId}
-                        />
-                      </label>
-                      <p className="form-guidance">
-                        Production builds should set VITE_GOOGLE_CLIENT_ID. Redirect:{" "}
-                        {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/google/callback`}
-                      </p>
-                    </details>
+                    <p className="configuration-error" role="status">
+                      Google Drive is unavailable because this app build has not been configured by
+                      its owner.
+                    </p>
                   ) : null}
                   <button
                     className="secondary-button"
@@ -1991,25 +1944,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     Connect OneDrive
                   </button>
                   {microsoftClientId === "" ? (
-                    <details className="developer-setup">
-                      <summary>Developer setup required</summary>
-                      <label className="vault-field">
-                        <span>Microsoft Entra client ID</span>
-                        <input
-                          autoComplete="off"
-                          className="vault-input"
-                          disabled={busy}
-                          onChange={(event) => setMicrosoftClientId(event.target.value)}
-                          placeholder="00000000-0000-0000-0000-000000000000"
-                          spellCheck={false}
-                          value={microsoftClientId}
-                        />
-                      </label>
-                      <p className="form-guidance">
-                        Production builds should set VITE_MICROSOFT_CLIENT_ID. Redirect:{" "}
-                        {`${globalThis.location?.origin ?? "http://127.0.0.1:5173"}/oauth/microsoft/callback`}
-                      </p>
-                    </details>
+                    <p className="configuration-error" role="status">
+                      OneDrive is unavailable because this app build has not been configured by its
+                      owner.
+                    </p>
                   ) : null}
                   <button
                     className="secondary-button"

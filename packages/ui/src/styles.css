@@ -349,15 +349,14 @@ select {
   color: #fff;
 }
 
-.developer-setup {
-  padding-top: 0.8rem;
-  border-top: 1px solid rgb(255 255 255 / 10%);
-}
-
-.developer-setup summary {
-  color: #aeb7cd;
-  cursor: pointer;
-  font-weight: 650;
+.configuration-error {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid rgb(245 158 11 / 35%);
+  border-radius: 0.7rem;
+  color: #fcd34d;
+  background: rgb(245 158 11 / 8%);
+  font-size: 0.9rem;
 }
 
 .vault-field {
