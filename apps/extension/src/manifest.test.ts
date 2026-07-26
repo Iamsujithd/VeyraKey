@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import { extensionManifest, manifestForBrowser } from "./manifest";
 
 describe("extension manifest", () => {
-  it("requests only session-storage capability and no host access", () => {
-    expect(extensionManifest.permissions).toEqual(["activeTab", "scripting", "storage"]);
-    expect(extensionManifest.host_permissions).toEqual([]);
+  it("requests only browser tools, OAuth identity, storage, and Google API access", () => {
+    expect(extensionManifest.permissions).toEqual([
+      "activeTab",
+      "identity",
+      "scripting",
+      "storage",
+    ]);
+    expect(extensionManifest.host_permissions).toEqual(["https://www.googleapis.com/*"]);
   });
 
   it("uses a restrictive extension-page CSP", () => {
@@ -12,6 +17,7 @@ describe("extension manifest", () => {
 
     expect(policy).toContain("script-src 'self'");
     expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain("connect-src 'self' https://www.googleapis.com");
     expect(policy).not.toContain("unsafe-eval");
     expect(policy).not.toContain("unsafe-inline");
   });

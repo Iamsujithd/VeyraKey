@@ -42,13 +42,23 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
     await readFile(`apps/extension/.output/${browser}/manifest.json`, "utf8"),
   );
   const permissions = [...(manifest.permissions ?? [])].sort();
-  if (JSON.stringify(permissions) !== JSON.stringify(["activeTab", "scripting", "storage"])) {
+  if (
+    JSON.stringify(permissions) !==
+    JSON.stringify(["activeTab", "identity", "scripting", "storage"])
+  ) {
     throw new Error(`${browser} permissions changed without review`);
   }
-  if ((manifest.host_permissions ?? []).length !== 0) {
-    throw new Error(`${browser} must not request persistent host permissions`);
+  if (
+    JSON.stringify(manifest.host_permissions ?? []) !==
+    JSON.stringify(["https://www.googleapis.com/*"])
+  ) {
+    throw new Error(`${browser} host permissions changed without review`);
   }
-  if (!manifest.content_security_policy?.extension_pages?.includes("script-src 'self'")) {
+  const extensionPolicy = manifest.content_security_policy?.extension_pages ?? "";
+  if (
+    !extensionPolicy.includes("script-src 'self'") ||
+    !extensionPolicy.includes("connect-src 'self' https://www.googleapis.com")
+  ) {
     throw new Error(`${browser} CSP is missing the self-only script policy`);
   }
 }

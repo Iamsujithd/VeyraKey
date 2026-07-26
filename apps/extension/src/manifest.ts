@@ -4,12 +4,13 @@ export const extensionManifest = {
   },
   content_security_policy: {
     extension_pages:
-      "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "script-src 'self'; connect-src 'self' https://www.googleapis.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   },
   description: "A browser-first zero-knowledge security and identity wallet.",
-  host_permissions: [],
+  host_permissions: ["https://www.googleapis.com/*"],
+  key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt/mAyYbU0fn6w8RuJguaSsbKM3UdD8SZMjlRiymIc6ccBPcHRI9RjuZwsQEI+fYtJie2MDKnNpzLI8Y3omT4UrGznHEW1j/bejOFi6A6iGXZ1Vchc+041Jm2d+d1Nr2vnR1VM+iVp7GFayJC+5NpRo4w8YrwQjMAtObqtjAZ65kOfbdGTDHYmBgZ4gwWuT4UK4Pe2JMZdni6rHZlt5u8FHMkx2ehQj/duu8zB36K+ICpPcNgp0E+4qlYiMkLk9L7DkNgbzt/wU2L7X0FWEJnm5NQdCPZ9tqSFTE6YewxQdnUfgWarBp/qI1hrPcASuT7I2+NzQu7dvFVDAVAlbYlFwIDAQAB",
   name: "Zero-Knowledge Wallet",
-  permissions: ["activeTab", "scripting", "storage"],
+  permissions: ["activeTab", "identity", "scripting", "storage"],
   version: "0.0.1",
 };
 

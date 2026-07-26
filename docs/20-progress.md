@@ -284,14 +284,14 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 ### Task 7 — Secure MV3 extension sessions
 
 - **Status:** Complete.
-- **Scope delivered:** A short-lived root-session export/resume boundary that re-authenticates the current encrypted V2 header; volatile `storage.session` serialization; mandatory `TRUSTED_CONTEXTS` access restriction; strict expiry and record parsing; extension sender-origin validation; multi-context unlock/lock broadcasts; popup lifecycle integration; and the single required `storage` permission with no host access.
+- **Scope delivered:** A short-lived root-session export/resume boundary that re-authenticates the current encrypted V2 header; volatile `storage.session` serialization; mandatory `TRUSTED_CONTEXTS` access restriction; strict expiry and record parsing; extension sender-origin validation; multi-context unlock/lock broadcasts; popup lifecycle integration; native `browser.identity` Google OAuth; and root-namespaced encrypted Drive synchronization limited to `https://www.googleapis.com/*`.
 - **Architecture decision:** [ADR-027](21-architecture-decisions.md) records why volatile root session material is permitted, how restart resume fails closed, and why item plaintext and compartment keys remain excluded.
 
 #### Validation and demo evidence
 
 - A service instance creates and verifies a vault, exports a copied 32-byte root lease, locks, and a fresh service instance resumes only after verifying vault ID, expiry, complete header authentication, and encrypted payload authentication. Consumed key copies are overwritten best effort.
 - Fake MV3 storage verifies trusted-only access configuration, restart load, malformed/expired removal, successful-unlock persistence, second-context resume, lock broadcast, and rejection of page, tab, foreign-extension, and lookalike senders.
-- `pnpm check` passes with 24 test files and 111 tests; Worker, web, Chrome MV3, and Firefox MV3 builds complete. Generated manifests request `storage` only and retain no host permissions.
+- Extension OAuth tests verify the exact hidden app-data scope, redirect/state binding, bearer validation, and narrowly scoped identity/API manifest permissions. Chrome MV3 and Firefox MV3 production builds complete.
 
 #### Security, privacy, and limitations
 
@@ -327,7 +327,10 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - **Artifact evidence:** Chrome ZIP SHA-256 `dcfd72fe51cb42a7e5734db51e9a143fc82a8a330495a53560ac310c6030b5a9`; Firefox ZIP SHA-256 `bc6b5ca7ad14b780e325a50ca818bb949144f05dcdd1ac01910021dd761b9f36`; lockfile SHA-256 `910e7b1aaffe0b201afb55772adf07987d0d303985647562a02d2bcddeb2654e`.
 - **Latest validation:** `CI=true pnpm check` passes with 31 test files and 156 tests, all production targets, and artifact verification.
 - **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
-  is registered for localhost and its configured test account; Microsoft OAuth is blocked until
-  the current account has an Entra tenant/directory. The real Chrome/Firefox/PRF matrix has not
-  run, and neither extension ZIP is store-signed. Task 14 must not be marked complete until the
-  applicable evidence is attached.
+  is registered for localhost and its configured test account. The pinned Chrome extension ID is
+  `lnabfclakgdolgcfallnnhkeeoclfkcf`; its
+  `https://lnabfclakgdolgcfallnnhkeeoclfkcf.chromiumapp.org/oauth/google` redirect still needs to
+  be added after the Google account's fresh-verification prompt is completed. Microsoft OAuth is
+  blocked until the current account has an Entra tenant/directory. The real Chrome/Firefox/PRF
+  matrix has not run, and neither extension ZIP is store-signed. Task 14 must not be marked
+  complete until the applicable evidence is attached.

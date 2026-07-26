@@ -62,7 +62,6 @@ export function buildGoogleOAuthUrl(options: {
   url.search = new URLSearchParams({
     client_id: options.clientId.trim(),
     include_granted_scopes: "true",
-    prompt: "consent",
     redirect_uri: redirect.href,
     response_type: "token",
     scope: GOOGLE_DRIVE_APPDATA_SCOPE,
@@ -251,9 +250,9 @@ export function withGoogleDriveSync(
       const material = service.exportSessionMaterial();
       try {
         const clientId = request.clientId.trim();
-        const provider = drive(clientId, await driveNamespace(material.rootKey, material.vaultId));
         // Preserve transient user activation by opening OAuth before sync touches IndexedDB.
         await tokenProvider?.getAccessToken();
+        const provider = drive(clientId, await driveNamespace(material.rootKey, material.vaultId));
         const result = await syncVaultItems({
           codec: createEncryptedVaultSyncCodec(cryptoProvider, material.rootKey, material.vaultId),
           deviceId: deviceId(),

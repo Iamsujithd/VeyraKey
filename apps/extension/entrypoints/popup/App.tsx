@@ -12,6 +12,7 @@ import {
 import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
 import { createVaultService, type LoginItem } from "@zk-wallet/vault";
 import { useState } from "react";
+import { withExtensionGoogleDriveSync } from "../../src/googleDrive";
 import {
   ExtensionSessionCoordinator,
   type ExtensionSessionEvent,
@@ -212,8 +213,9 @@ export async function fillActiveTotp(client: VaultClient): Promise<string> {
 }
 
 function createLocalVaultClient(): VaultClient {
+  const crypto = createCryptoProvider();
   const client = createVaultService({
-    crypto: createCryptoProvider(),
+    crypto,
     devicePrf: createWebAuthnPrfProvider(),
     itemRepository: new IndexedDbItemRevisionRepository(),
     repository: new IndexedDbVaultHeaderRepository(),
@@ -247,7 +249,7 @@ function createLocalVaultClient(): VaultClient {
       setAccessLevel: (options) => browser.storage.session.setAccessLevel(options),
     },
   });
-  return withExtensionSession(client, coordinator);
+  return withExtensionSession(withExtensionGoogleDriveSync(client, crypto), coordinator);
 }
 
 export function App({ client }: AppProps) {
@@ -256,7 +258,11 @@ export function App({ client }: AppProps) {
   const [capture, setCapture] = useState<CaptureProposal | null>(null);
   return (
     <>
-      <VaultScreen client={vaultClient} surface="Browser extension" />
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID }}
+        surface="Browser extension"
+      />
       <section aria-label="Browser login tools">
         <button
           type="button"
