@@ -269,6 +269,9 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - The adapter receives only already encrypted sync envelopes. OAuth access tokens are requested per operation, retained only by the caller-owned in-memory token provider, and never sent to the application API.
 - Drive can observe object names, sizes, timing, account identity, and access patterns. Users can revoke access or delete the hidden app data, so independent encrypted exports remain necessary.
 - Drive does not provide the immutable compare-and-swap primitive required for correctness. A lost upload response may produce a duplicate object; authenticated revision identity and deterministic union make duplicate delivery safe.
+- Sync object names include an opaque root-derived vault namespace. Multiple vaults may use the same
+  Google account without attempting to decrypt or quarantine one another's revisions; the encrypted
+  recovery archive remains separately discoverable for clean-profile restoration.
 - The web client uses a project-configured OAuth web client ID, opens consent for the exact
   `drive.appdata` scope, keeps access tokens only in memory, runs the production encrypted sync
   coordinator, uploads a Recovery-Kit-protected archive after successful sync, and supports direct

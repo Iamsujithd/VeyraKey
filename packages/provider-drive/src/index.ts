@@ -57,6 +57,7 @@ export interface DriveChangePage {
 export interface GoogleDriveSyncProviderOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly maximumAttempts?: number;
+  readonly namespace?: string;
   readonly retryDelay?: (attempt: number) => Promise<void>;
   readonly tokenProvider: DriveAccessTokenProvider;
 }
@@ -66,16 +67,21 @@ interface DriveFile {
   readonly name: string;
 }
 
-function fileName(locator: string): string {
+function syncFilePrefix(namespace?: string): string {
+  return namespace === undefined ? FILE_PREFIX : `${FILE_PREFIX}${namespace}_`;
+}
+
+function fileName(locator: string, namespace?: string): string {
   if (!LOCATOR_PATTERN.test(locator)) {
     throw new DriveProviderError("DRIVE_INVALID_INPUT", "Sync object locator is invalid");
   }
-  return `${FILE_PREFIX}${locator}${FILE_SUFFIX}`;
+  return `${syncFilePrefix(namespace)}${locator}${FILE_SUFFIX}`;
 }
 
-function locatorFromName(name: string): string | undefined {
-  if (!name.startsWith(FILE_PREFIX) || !name.endsWith(FILE_SUFFIX)) return undefined;
-  const locator = name.slice(FILE_PREFIX.length, -FILE_SUFFIX.length);
+function locatorFromName(name: string, namespace?: string): string | undefined {
+  const prefix = syncFilePrefix(namespace);
+  if (!name.startsWith(prefix) || !name.endsWith(FILE_SUFFIX)) return undefined;
+  const locator = name.slice(prefix.length, -FILE_SUFFIX.length);
   return LOCATOR_PATTERN.test(locator) ? locator : undefined;
 }
 
@@ -145,12 +151,14 @@ function assertObjectSize(body: string): void {
 export class GoogleDriveSyncProvider implements SyncProvider {
   readonly #fetch: typeof globalThis.fetch;
   readonly #maximumAttempts: number;
+  readonly #namespace: string | undefined;
   readonly #retryDelay: (attempt: number) => Promise<void>;
   readonly #tokenProvider: DriveAccessTokenProvider;
 
   constructor(options: GoogleDriveSyncProviderOptions) {
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#maximumAttempts = options.maximumAttempts ?? 4;
+    this.#namespace = options.namespace;
     this.#retryDelay =
       options.retryDelay ??
       ((attempt) =>
@@ -160,6 +168,9 @@ export class GoogleDriveSyncProvider implements SyncProvider {
     this.#tokenProvider = options.tokenProvider;
     if (!Number.isInteger(this.#maximumAttempts) || this.#maximumAttempts < 1) {
       throw new DriveProviderError("DRIVE_INVALID_INPUT", "Retry count is invalid");
+    }
+    if (this.#namespace !== undefined && !LOCATOR_PATTERN.test(this.#namespace)) {
+      throw new DriveProviderError("DRIVE_INVALID_INPUT", "Drive namespace is invalid");
     }
   }
 
@@ -248,7 +259,7 @@ export class GoogleDriveSyncProvider implements SyncProvider {
   }
 
   async #download(file: DriveFile): Promise<OpaqueSyncObject | undefined> {
-    const locator = locatorFromName(file.name);
+    const locator = locatorFromName(file.name, this.#namespace);
     if (locator === undefined) return undefined;
     const response = await this.#request(
       `${API_ROOT}/files/${encodeURIComponent(file.id)}?alt=media`,
@@ -271,7 +282,7 @@ export class GoogleDriveSyncProvider implements SyncProvider {
   }
 
   async putIfAbsent(object: OpaqueSyncObject): Promise<"created" | "exists"> {
-    const name = fileName(object.locator);
+    const name = fileName(object.locator, this.#namespace);
     assertObjectSize(object.body);
     if ((await this.#listFiles(name)).length > 0) return "exists";
 
@@ -396,7 +407,7 @@ export class GoogleDriveSyncProvider implements SyncProvider {
         fileId: entry.fileId,
         locator:
           file !== undefined && typeof file.name === "string"
-            ? locatorFromName(file.name)
+            ? locatorFromName(file.name, this.#namespace)
             : undefined,
         removed: entry.removed === true,
       };

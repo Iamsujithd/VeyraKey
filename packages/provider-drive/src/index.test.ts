@@ -15,7 +15,7 @@ function json(value: unknown, status = 200): Response {
   });
 }
 
-function provider(fetch: typeof globalThis.fetch, tokens = ["token"]) {
+function provider(fetch: typeof globalThis.fetch, tokens = ["token"], namespace?: string) {
   let index = 0;
   const invalidated: string[] = [];
   return {
@@ -23,6 +23,7 @@ function provider(fetch: typeof globalThis.fetch, tokens = ["token"]) {
     value: new GoogleDriveSyncProvider({
       fetch,
       maximumAttempts: 3,
+      ...(namespace === undefined ? {} : { namespace }),
       retryDelay: async () => undefined,
       tokenProvider: {
         getAccessToken: async () => tokens[Math.min(index, tokens.length - 1)] ?? "",
@@ -66,6 +67,32 @@ describe("Google Drive appDataFolder provider", () => {
     ]);
     expect(urls.filter((url) => url.includes("/files?"))).toHaveLength(2);
     expect(urls[0]).toContain("spaces=appDataFolder");
+  });
+
+  it("isolates encrypted revisions by an opaque vault namespace", async () => {
+    const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("alt=media")) return new Response("current-vault-ciphertext");
+      if (url.includes("/upload/")) {
+        expect(String(init?.body)).toContain('"name":"zkv1_vaultnamespace_newrevision.sync"');
+        return json({ id: "created" });
+      }
+      if (url.includes("q=")) return json({ files: [] });
+      return json({
+        files: [
+          { id: "current", name: "zkv1_vaultnamespace_revision.sync" },
+          { id: "legacy", name: "zkv1_revision.sync" },
+          { id: "foreign", name: "zkv1_othernamespace_revision.sync" },
+        ],
+      });
+    };
+    const drive = provider(fetch as typeof globalThis.fetch, ["token"], "vaultnamespace").value;
+    await expect(drive.list()).resolves.toEqual([
+      { body: "current-vault-ciphertext", locator: "revision" },
+    ]);
+    await expect(
+      drive.putIfAbsent({ body: "current-vault-ciphertext", locator: "newrevision" }),
+    ).resolves.toBe("created");
   });
 
   it("uploads immutable multipart objects and treats an existing name idempotently", async () => {

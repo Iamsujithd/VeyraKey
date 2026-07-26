@@ -231,6 +231,9 @@ describe("VaultScreen Task 3 flows", () => {
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "temporary secret" },
     });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Master password")).toHaveValue("temporary secret"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Unlock vault" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

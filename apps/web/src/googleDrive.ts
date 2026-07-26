@@ -1,4 +1,10 @@
-import { type CryptoProvider, zeroBytes } from "@zk-wallet/crypto";
+import {
+  base64UrlToBytes,
+  bytesToBase64Url,
+  type CryptoProvider,
+  utf8ToBytes,
+  zeroBytes,
+} from "@zk-wallet/crypto";
 import { IndexedDbItemRevisionRepository, IndexedDbSyncRepository } from "@zk-wallet/persistence";
 import {
   type DriveAccessTokenProvider,
@@ -13,6 +19,7 @@ const DEVICE_ID_KEY = "zk-wallet-device-id-v1";
 const MAX_TOKEN_LENGTH = 8_192;
 const OAUTH_TIMEOUT_MILLISECONDS = 120_000;
 const GOOGLE_API_ORIGIN = "https://www.googleapis.com";
+const DRIVE_NAMESPACE_BYTES = 16;
 
 interface OAuthToken {
   readonly accessToken: string;
@@ -184,7 +191,7 @@ export function withGoogleDriveSync(
 ): CoreVaultClient & VaultClient {
   let tokenProvider: BrowserGoogleTokenProvider | null = null;
   let configuredClientId = "";
-  function drive(clientId: string): GoogleDriveSyncProvider {
+  function drive(clientId: string, namespace?: string): GoogleDriveSyncProvider {
     if (tokenProvider === null || configuredClientId !== clientId) {
       tokenProvider?.disconnect();
       tokenProvider = new BrowserGoogleTokenProvider(
@@ -193,7 +200,24 @@ export function withGoogleDriveSync(
       );
       configuredClientId = clientId;
     }
-    return new GoogleDriveSyncProvider({ fetch: googleDriveFetch, tokenProvider });
+    return new GoogleDriveSyncProvider({
+      fetch: googleDriveFetch,
+      ...(namespace === undefined ? {} : { namespace }),
+      tokenProvider,
+    });
+  }
+  async function driveNamespace(rootKey: Uint8Array, vaultId: string): Promise<string> {
+    const namespace = await cryptoProvider.hkdfSha256(
+      rootKey,
+      base64UrlToBytes(vaultId),
+      utf8ToBytes("zk-wallet/v1/google-drive-namespace"),
+      DRIVE_NAMESPACE_BYTES,
+    );
+    try {
+      return bytesToBase64Url(namespace);
+    } finally {
+      zeroBytes(namespace);
+    }
   }
   return Object.assign(service, {
     disconnectGoogleDrive() {
@@ -227,7 +251,7 @@ export function withGoogleDriveSync(
       const material = service.exportSessionMaterial();
       try {
         const clientId = request.clientId.trim();
-        const provider = drive(clientId);
+        const provider = drive(clientId, await driveNamespace(material.rootKey, material.vaultId));
         // Preserve transient user activation by opening OAuth before sync touches IndexedDB.
         await tokenProvider?.getAccessToken();
         const result = await syncVaultItems({
