@@ -50,14 +50,16 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   }
   if (
     JSON.stringify(manifest.host_permissions ?? []) !==
-    JSON.stringify(["https://*.googleapis.com/*"])
+    JSON.stringify(["https://*.googleapis.com/*", "https://api.pwnedpasswords.com/*"])
   ) {
     throw new Error(`${browser} host permissions changed without review`);
   }
   const extensionPolicy = manifest.content_security_policy?.extension_pages ?? "";
   if (
     !extensionPolicy.includes("script-src 'self' 'wasm-unsafe-eval'") ||
-    !extensionPolicy.includes("connect-src 'self' https://*.googleapis.com")
+    !extensionPolicy.includes(
+      "connect-src 'self' https://*.googleapis.com https://api.pwnedpasswords.com",
+    )
   ) {
     throw new Error(`${browser} CSP is missing the reviewed script or connection policy`);
   }
