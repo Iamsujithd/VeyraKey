@@ -57,20 +57,37 @@ export default defineBackground(() => {
   });
   coordinator.bind(service);
   const initialized = coordinator.initialize().then(() => service.initialize());
-  const observedUsernames = new Map<
-    string,
-    { readonly expiresAt: number; readonly username: string }
-  >();
-  const pendingCaptures = new Map<
-    number,
-    {
-      readonly action: "save" | "update";
-      readonly capture: CaptureRequest;
-      readonly displayHost: string;
-      readonly expiresAt: number;
-      readonly username: string;
+  type PendingCapture = {
+    readonly action: "save" | "update";
+    readonly capture: CaptureRequest;
+    readonly displayHost: string;
+    readonly expiresAt: number;
+    readonly username: string;
+  };
+  const pendingKey = (tabId: number) => `zk-wallet.pending-capture.v1.${tabId}`;
+  const loadPending = async (tabId: number): Promise<PendingCapture | null> => {
+    const key = pendingKey(tabId);
+    const value = (await browser.storage.session.get(key))[key];
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      await browser.storage.session.remove(key);
+      return null;
     }
-  >();
+    const pending = value as Partial<PendingCapture>;
+    if (
+      !["save", "update"].includes(pending.action ?? "") ||
+      typeof pending.displayHost !== "string" ||
+      typeof pending.expiresAt !== "number" ||
+      typeof pending.username !== "string" ||
+      parseCaptureRequest(pending.capture, CAPTURE_REQUEST_TYPE) === null
+    ) {
+      await browser.storage.session.remove(key);
+      return null;
+    }
+    return pending as PendingCapture;
+  };
+  const savePending = (tabId: number, pending: PendingCapture) =>
+    browser.storage.session.set({ [pendingKey(tabId)]: pending });
+  const deletePending = (tabId: number) => browser.storage.session.remove(pendingKey(tabId));
 
   const trustedOrigin = (topUrl: string, sender: Browser.runtime.MessageSender): boolean => {
     try {
@@ -108,10 +125,29 @@ export default defineBackground(() => {
   const observationKey = (sender: Browser.runtime.MessageSender, topUrl: string): string | null => {
     if (sender.tab?.id === undefined) return null;
     try {
-      return `${sender.tab.id}:${new URL(topUrl).origin}`;
+      return `zk-wallet.observed-username.v1.${sender.tab.id}.${encodeURIComponent(new URL(topUrl).origin)}`;
     } catch {
       return null;
     }
+  };
+  const loadObservedUsername = async (
+    key: string | null,
+  ): Promise<{ readonly expiresAt: number; readonly username: string } | null> => {
+    if (key === null) return null;
+    const value = (await browser.storage.session.get(key))[key];
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      !("expiresAt" in value) ||
+      typeof value.expiresAt !== "number" ||
+      !("username" in value) ||
+      typeof value.username !== "string"
+    ) {
+      await browser.storage.session.remove(key);
+      return null;
+    }
+    return value as { readonly expiresAt: number; readonly username: string };
   };
 
   browser.runtime.onMessage.addListener(
@@ -171,9 +207,11 @@ export default defineBackground(() => {
         if (!trustedOrigin(observed.topUrl, sender)) return { status: "unavailable", version: 1 };
         const key = observationKey(sender, observed.topUrl);
         if (key !== null) {
-          observedUsernames.set(key, {
-            expiresAt: Date.now() + 10 * 60 * 1_000,
-            username: observed.username,
+          await browser.storage.session.set({
+            [key]: {
+              expiresAt: Date.now() + 10 * 60 * 1_000,
+              username: observed.username,
+            },
           });
         }
         return;
@@ -183,10 +221,9 @@ export default defineBackground(() => {
       const pendingQuery = parseCapturePendingRequest(message);
       if (pendingQuery !== null) {
         if (sender.id !== browser.runtime.id || sender.frameId !== 0 || tabId === undefined) return;
-        const pending = pendingCaptures.get(tabId);
-        if (pending === undefined) return { status: "unavailable", version: 1 };
-        if (pending.expiresAt <= Date.now()) {
-          pendingCaptures.delete(tabId);
+        const pending = await loadPending(tabId);
+        if (pending === null || pending.expiresAt <= Date.now()) {
+          await deletePending(tabId);
           return { status: "unavailable", version: 1 };
         }
         return {
@@ -200,7 +237,7 @@ export default defineBackground(() => {
       const dismiss = parseCaptureActionRequest(message, CAPTURE_DISMISS_TYPE);
       if (dismiss !== null) {
         if (sender.id === browser.runtime.id && sender.frameId === 0 && tabId !== undefined) {
-          pendingCaptures.delete(tabId);
+          await deletePending(tabId);
         }
         return;
       }
@@ -210,9 +247,9 @@ export default defineBackground(() => {
         if (sender.id !== browser.runtime.id || sender.frameId !== 0 || tabId === undefined) {
           return { status: "unavailable", version: 1 };
         }
-        const pending = pendingCaptures.get(tabId);
-        pendingCaptures.delete(tabId);
-        if (pending === undefined || pending.expiresAt <= Date.now()) {
+        const pending = await loadPending(tabId);
+        await deletePending(tabId);
+        if (pending === null || pending.expiresAt <= Date.now()) {
           return { status: "unavailable", version: 1 };
         }
         const logins = await unlockedLogins();
@@ -269,14 +306,14 @@ export default defineBackground(() => {
         return { status: "unavailable", version: 1 };
       }
       const key = observationKey(sender, capture.topUrl);
-      const remembered = key === null ? undefined : observedUsernames.get(key);
-      if (key !== null && remembered !== undefined && remembered.expiresAt <= Date.now()) {
-        observedUsernames.delete(key);
+      const remembered = await loadObservedUsername(key);
+      if (key !== null && remembered !== null && remembered.expiresAt <= Date.now()) {
+        await browser.storage.session.remove(key);
       }
       const username =
         capture.username.length > 0
           ? capture.username
-          : remembered !== undefined && remembered.expiresAt > Date.now()
+          : remembered !== null && remembered.expiresAt > Date.now()
             ? remembered.username
             : "";
       const logins = await unlockedLogins();
@@ -300,14 +337,14 @@ export default defineBackground(() => {
         };
       }
       if (tabId === undefined) return { status: "unavailable", version: 1 };
-      pendingCaptures.set(tabId, {
+      await savePending(tabId, {
         action: decision.action,
         capture,
         displayHost: decision.displayHost,
         expiresAt: Date.now() + 2 * 60 * 1_000,
         username,
       });
-      if (key !== null) observedUsernames.delete(key);
+      if (key !== null) await browser.storage.session.remove(key);
       return {
         action: decision.action,
         displayHost: decision.displayHost,

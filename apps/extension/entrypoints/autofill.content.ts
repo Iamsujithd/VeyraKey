@@ -136,20 +136,24 @@ export default defineContentScript({
                 label: response.action === "save" ? "Save in vault" : "Update saved login",
                 run: () => {
                   closePrompt();
-                  void browser.runtime.sendMessage({
-                    type: CAPTURE_CONFIRM_TYPE,
-                    userInitiated: true,
-                    version: 1,
-                  });
+                  void browser.runtime
+                    .sendMessage({
+                      type: CAPTURE_CONFIRM_TYPE,
+                      userInitiated: true,
+                      version: 1,
+                    })
+                    .catch(() => undefined);
                 },
               },
             ],
             () => {
-              void browser.runtime.sendMessage({
-                type: CAPTURE_DISMISS_TYPE,
-                userInitiated: true,
-                version: 1,
-              });
+              void browser.runtime
+                .sendMessage({
+                  type: CAPTURE_DISMISS_TYPE,
+                  userInitiated: true,
+                  version: 1,
+                })
+                .catch(() => undefined);
             },
           );
         })
@@ -168,20 +172,24 @@ export default defineContentScript({
                 label: response.action === "save" ? "Save in vault" : "Update saved login",
                 run: () => {
                   closePrompt();
-                  void browser.runtime.sendMessage({
-                    type: CAPTURE_CONFIRM_TYPE,
-                    userInitiated: true,
-                    version: 1,
-                  });
+                  void browser.runtime
+                    .sendMessage({
+                      type: CAPTURE_CONFIRM_TYPE,
+                      userInitiated: true,
+                      version: 1,
+                    })
+                    .catch(() => undefined);
                 },
               },
             ],
             () => {
-              void browser.runtime.sendMessage({
-                type: CAPTURE_DISMISS_TYPE,
-                userInitiated: true,
-                version: 1,
-              });
+              void browser.runtime
+                .sendMessage({
+                  type: CAPTURE_DISMISS_TYPE,
+                  userInitiated: true,
+                  version: 1,
+                })
+                .catch(() => undefined);
             },
           );
         })
