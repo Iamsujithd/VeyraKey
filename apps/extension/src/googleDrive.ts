@@ -131,6 +131,7 @@ export function withExtensionGoogleDriveSync(
   };
   const provider = (clientId: string, namespace?: string) =>
     new GoogleDriveSyncProvider({
+      fetch: globalThis.fetch.bind(globalThis),
       ...(namespace === undefined ? {} : { namespace }),
       tokenProvider: tokenProvider(clientId),
     });

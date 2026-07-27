@@ -3,7 +3,7 @@ import { extensionManifest, manifestForBrowser } from "./manifest";
 
 describe("extension manifest", () => {
   it("identifies the WebAssembly-enabled build", () => {
-    expect(extensionManifest.version).toBe("0.0.2");
+    expect(extensionManifest.version).toBe("0.0.3");
   });
 
   it("requests only browser tools, OAuth identity, storage, and Google API access", () => {
@@ -13,7 +13,7 @@ describe("extension manifest", () => {
       "scripting",
       "storage",
     ]);
-    expect(extensionManifest.host_permissions).toEqual(["https://www.googleapis.com/*"]);
+    expect(extensionManifest.host_permissions).toEqual(["https://*.googleapis.com/*"]);
   });
 
   it("uses a restrictive extension-page CSP", () => {
@@ -21,7 +21,7 @@ describe("extension manifest", () => {
 
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(policy).toContain("object-src 'none'");
-    expect(policy).toContain("connect-src 'self' https://www.googleapis.com");
+    expect(policy).toContain("connect-src 'self' https://*.googleapis.com");
     expect(policy).not.toMatch(/(?:^|[\s;])'unsafe-eval'(?:[\s;]|$)/u);
     expect(policy).not.toContain("unsafe-inline");
   });
