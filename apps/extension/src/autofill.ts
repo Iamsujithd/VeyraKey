@@ -92,6 +92,22 @@ export type CaptureResponse =
     }
   | { readonly action: "save" | "update"; readonly status: "saved"; readonly version: 1 };
 
+function isInvalidatedExtensionContext(error: unknown): boolean {
+  return error instanceof Error && /extension context invalidated/iu.test(error.message);
+}
+
+export async function sendRuntimeMessageSafely<T>(
+  send: () => Promise<T>,
+  onContextInvalidated: () => void,
+): Promise<T | undefined> {
+  try {
+    return await send();
+  } catch (error) {
+    if (isInvalidatedExtensionContext(error)) onContextInvalidated();
+    return undefined;
+  }
+}
+
 function validOriginRequest(request: Record<string, unknown>): boolean {
   if (
     request.userInitiated !== true ||

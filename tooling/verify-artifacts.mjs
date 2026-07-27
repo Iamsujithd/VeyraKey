@@ -76,6 +76,9 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   ) {
     throw new Error(`${browser} contains an unauthenticated credential-selection path`);
   }
+  if (!autofillSource.includes("extension context invalidated")) {
+    throw new Error(`${browser} does not contain the stale-content-script reload guard`);
+  }
 }
 
 const sbom = JSON.parse(await readFile("release/sbom.cdx.json", "utf8"));

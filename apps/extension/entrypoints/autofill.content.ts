@@ -15,6 +15,7 @@ import {
   isUsernameField,
   MANUAL_AUTOFILL_REQUEST_TYPE,
   parseBiometricFillRequest,
+  sendRuntimeMessageSafely,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "../src/autofill";
@@ -29,6 +30,9 @@ export default defineContentScript({
     let promptCleanup: (() => void) | null = null;
     let requestInProgress = false;
     let queuedSuggestionAnchor: Element | null = null;
+    let extensionContextActive = true;
+    let observer: MutationObserver | null = null;
+    const extensionId = browser.runtime.id;
 
     const closePrompt = () => {
       promptCleanup?.();
@@ -38,6 +42,19 @@ export default defineContentScript({
       promptAnchor = null;
       promptKind = null;
     };
+    const invalidateExtensionContext = () => {
+      if (!extensionContextActive) return;
+      extensionContextActive = false;
+      queuedSuggestionAnchor = null;
+      requestInProgress = false;
+      observer?.disconnect();
+      closePrompt();
+    };
+    const sendMessage = <T>(message: unknown) =>
+      sendRuntimeMessageSafely<T>(
+        () => browser.runtime.sendMessage(message) as Promise<T>,
+        invalidateExtensionContext,
+      );
     const prompt = (
       kind: "capture" | "suggestions",
       title: string,
@@ -246,6 +263,7 @@ export default defineContentScript({
     };
 
     const requestSuggestions = (anchor: Element | null) => {
+      if (!extensionContextActive) return;
       if (requestInProgress) {
         queuedSuggestionAnchor = anchor;
         return;
@@ -254,13 +272,12 @@ export default defineContentScript({
         return;
       }
       requestInProgress = true;
-      void browser.runtime
-        .sendMessage({
-          topUrl: location.href,
-          type: AUTOFILL_REQUEST_TYPE,
-          userInitiated: true,
-          version: 1,
-        })
+      void sendMessage<AutofillResponse>({
+        topUrl: location.href,
+        type: AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      })
         .then((response: AutofillResponse | undefined) => {
           if (response?.status === "locked") {
             prompt(
@@ -276,14 +293,12 @@ export default defineContentScript({
                         label: "Use Touch ID or Biometrics",
                         run: () => {
                           closePrompt();
-                          void browser.runtime
-                            .sendMessage({
-                              topUrl: location.href,
-                              type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
-                              userInitiated: true,
-                              version: 1,
-                            })
-                            .catch(() => undefined);
+                          void sendMessage({
+                            topUrl: location.href,
+                            type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+                            userInitiated: true,
+                            version: 1,
+                          });
                         },
                       },
                     ]
@@ -294,14 +309,12 @@ export default defineContentScript({
                   label: "Enter Master Password",
                   run: () => {
                     closePrompt();
-                    void browser.runtime
-                      .sendMessage({
-                        topUrl: location.href,
-                        type: MANUAL_AUTOFILL_REQUEST_TYPE,
-                        userInitiated: true,
-                        version: 1,
-                      })
-                      .catch(() => undefined);
+                    void sendMessage({
+                      topUrl: location.href,
+                      type: MANUAL_AUTOFILL_REQUEST_TYPE,
+                      userInitiated: true,
+                      version: 1,
+                    });
                   },
                 },
               ],
@@ -312,17 +325,15 @@ export default defineContentScript({
           if (response?.status !== "suggestions") return;
           const authenticateAndFill = (credentialId: string, submit: boolean) => {
             closePrompt();
-            void browser.runtime
-              .sendMessage({
-                credentialId,
-                method: response.deviceSlots.length > 0 ? "biometric" : "password",
-                submit,
-                topUrl: location.href,
-                type: AUTHENTICATED_AUTOFILL_SELECT_TYPE,
-                userInitiated: true,
-                version: 1,
-              })
-              .catch(() => undefined);
+            void sendMessage({
+              credentialId,
+              method: response.deviceSlots.length > 0 ? "biometric" : "password",
+              submit,
+              topUrl: location.href,
+              type: AUTHENTICATED_AUTOFILL_SELECT_TYPE,
+              userInitiated: true,
+              version: 1,
+            });
           };
           const options = response.credentials.flatMap((credential) => [
             {
@@ -350,8 +361,8 @@ export default defineContentScript({
           ]);
           prompt("suggestions", "Passwords", response.displayHost, options, anchor);
         })
-        .catch(() => undefined)
         .finally(() => {
+          if (!extensionContextActive) return;
           requestInProgress = false;
           const queuedAnchor = queuedSuggestionAnchor;
           queuedSuggestionAnchor = null;
@@ -360,60 +371,54 @@ export default defineContentScript({
     };
 
     const offerCapture = (anchor: Element | null) => {
+      if (!extensionContextActive) return;
       const captured = captureLoginFields(document);
       if (captured === null) return;
-      void browser.runtime
-        .sendMessage({
-          ...captured,
-          topUrl: location.href,
-          type: CAPTURE_REQUEST_TYPE,
-          userInitiated: true,
-          version: 1,
-        })
-        .then((response: CaptureResponse | undefined) => {
-          if (response?.status !== "offer") return;
-          prompt(
-            "capture",
-            response.action === "save" ? "Save This Password?" : "Update This Password?",
-            response.displayHost,
-            [
-              {
-                detail: "Encrypted in your vault",
-                icon: "✓",
-                label: response.action === "save" ? "Save Password" : "Update Password",
-                run: () => {
-                  closePrompt();
-                  void browser.runtime
-                    .sendMessage({
-                      type: CAPTURE_CONFIRM_TYPE,
-                      userInitiated: true,
-                      version: 1,
-                    })
-                    .catch(() => undefined);
-                },
-              },
-            ],
-            anchor,
-            () => {
-              void browser.runtime
-                .sendMessage({
-                  type: CAPTURE_DISMISS_TYPE,
+      void sendMessage<CaptureResponse>({
+        ...captured,
+        topUrl: location.href,
+        type: CAPTURE_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }).then((response: CaptureResponse | undefined) => {
+        if (response?.status !== "offer") return;
+        prompt(
+          "capture",
+          response.action === "save" ? "Save This Password?" : "Update This Password?",
+          response.displayHost,
+          [
+            {
+              detail: "Encrypted in your vault",
+              icon: "✓",
+              label: response.action === "save" ? "Save Password" : "Update Password",
+              run: () => {
+                closePrompt();
+                void sendMessage({
+                  type: CAPTURE_CONFIRM_TYPE,
                   userInitiated: true,
                   version: 1,
-                })
-                .catch(() => undefined);
+                });
+              },
             },
-          );
-        })
-        .catch(() => undefined);
+          ],
+          anchor,
+          () => {
+            void sendMessage({
+              type: CAPTURE_DISMISS_TYPE,
+              userInitiated: true,
+              version: 1,
+            });
+          },
+        );
+      });
     };
     const showPendingCapture = () => {
+      if (!extensionContextActive) return;
       const anchor =
         document.querySelector<HTMLInputElement>('input[type="password"]') ??
         document.querySelector<HTMLElement>('button[type="submit"],input[type="submit"]');
-      void browser.runtime
-        .sendMessage({ type: CAPTURE_PENDING_TYPE, version: 1 })
-        .then((response: CaptureResponse | undefined) => {
+      void sendMessage<CaptureResponse>({ type: CAPTURE_PENDING_TYPE, version: 1 }).then(
+        (response: CaptureResponse | undefined) => {
           if (response?.status !== "offer") return;
           prompt(
             "capture",
@@ -426,41 +431,35 @@ export default defineContentScript({
                 label: response.action === "save" ? "Save Password" : "Update Password",
                 run: () => {
                   closePrompt();
-                  void browser.runtime
-                    .sendMessage({
-                      type: CAPTURE_CONFIRM_TYPE,
-                      userInitiated: true,
-                      version: 1,
-                    })
-                    .catch(() => undefined);
+                  void sendMessage({
+                    type: CAPTURE_CONFIRM_TYPE,
+                    userInitiated: true,
+                    version: 1,
+                  });
                 },
               },
             ],
             anchor,
             () => {
-              void browser.runtime
-                .sendMessage({
-                  type: CAPTURE_DISMISS_TYPE,
-                  userInitiated: true,
-                  version: 1,
-                })
-                .catch(() => undefined);
+              void sendMessage({
+                type: CAPTURE_DISMISS_TYPE,
+                userInitiated: true,
+                version: 1,
+              });
             },
           );
-        })
-        .catch(() => undefined);
+        },
+      );
     };
     const rememberUsername = (input: HTMLInputElement) => {
-      if (!isUsernameField(input) || input.value.length === 0) return;
-      void browser.runtime
-        .sendMessage({
-          topUrl: location.href,
-          type: USERNAME_OBSERVED_TYPE,
-          userInitiated: true,
-          username: input.value,
-          version: 1,
-        })
-        .catch(() => undefined);
+      if (!extensionContextActive || !isUsernameField(input) || input.value.length === 0) return;
+      void sendMessage({
+        topUrl: location.href,
+        type: USERNAME_OBSERVED_TYPE,
+        userInitiated: true,
+        username: input.value,
+        version: 1,
+      });
     };
 
     document.addEventListener(
@@ -524,7 +523,7 @@ export default defineContentScript({
       const request = parseBiometricFillRequest(message);
       if (
         request === null ||
-        sender.id !== browser.runtime.id ||
+        sender.id !== extensionId ||
         sender.tab !== undefined ||
         new URL(request.topUrl).origin !== location.origin
       ) {
@@ -538,16 +537,20 @@ export default defineContentScript({
     let activeFieldCheckQueued = false;
     const checkActiveField = () => {
       activeFieldCheckQueued = false;
-      if (window.top === window && isCredentialField(document.activeElement)) {
+      if (
+        extensionContextActive &&
+        window.top === window &&
+        isCredentialField(document.activeElement)
+      ) {
         requestSuggestions(document.activeElement);
       }
     };
     const queueActiveFieldCheck = () => {
-      if (activeFieldCheckQueued) return;
+      if (!extensionContextActive || activeFieldCheckQueued) return;
       activeFieldCheckQueued = true;
       queueMicrotask(checkActiveField);
     };
-    const observer = new MutationObserver((records) => {
+    observer = new MutationObserver((records) => {
       const onlyWalletUiChanged = records.every((record) =>
         [...record.addedNodes, ...record.removedNodes].every(
           (node) => node instanceof HTMLElement && node.dataset.zkWalletUi === "true",

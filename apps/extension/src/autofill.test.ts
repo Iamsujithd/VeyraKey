@@ -24,11 +24,37 @@ import {
   parseCaptureRequest,
   parseManualAutofillRequest,
   parseUsernameObservedRequest,
+  sendRuntimeMessageSafely,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "./autofill";
 
 describe("extension automatic autofill", () => {
+  it("contains both synchronous and asynchronous extension-reload failures", async () => {
+    const invalidated = vi.fn();
+    await expect(
+      sendRuntimeMessageSafely(() => {
+        throw new Error("Extension context invalidated.");
+      }, invalidated),
+    ).resolves.toBeUndefined();
+    await expect(
+      sendRuntimeMessageSafely(
+        () => Promise.reject(new Error("Extension context invalidated.")),
+        invalidated,
+      ),
+    ).resolves.toBeUndefined();
+    expect(invalidated).toHaveBeenCalledTimes(2);
+
+    const ordinaryFailure = vi.fn();
+    await expect(
+      sendRuntimeMessageSafely(
+        () => Promise.reject(new Error("Temporary background failure")),
+        ordinaryFailure,
+      ),
+    ).resolves.toBeUndefined();
+    expect(ordinaryFailure).not.toHaveBeenCalled();
+  });
+
   it("accepts only an exact HTTPS request schema", () => {
     expect(
       parseAutofillRequest({
