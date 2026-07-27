@@ -1,6 +1,6 @@
 import {
+  AUTHENTICATED_AUTOFILL_SELECT_TYPE,
   AUTOFILL_REQUEST_TYPE,
-  AUTOFILL_SELECT_TYPE,
   type AutofillResponse,
   BIOMETRIC_AUTOFILL_REQUEST_TYPE,
   CAPTURE_CONFIRM_TYPE,
@@ -310,35 +310,40 @@ export default defineContentScript({
             return;
           }
           if (response?.status !== "suggestions") return;
-          const selectAndFill = (credentialId: string, submit: boolean) => {
+          const authenticateAndFill = (credentialId: string, submit: boolean) => {
             closePrompt();
             void browser.runtime
               .sendMessage({
                 credentialId,
+                method: response.deviceSlots.length > 0 ? "biometric" : "password",
+                submit,
                 topUrl: location.href,
-                type: AUTOFILL_SELECT_TYPE,
+                type: AUTHENTICATED_AUTOFILL_SELECT_TYPE,
                 userInitiated: true,
                 version: 1,
               })
-              .then((selected: AutofillResponse | undefined) => {
-                if (selected?.status !== "fill") return;
-                if (fillLoginFields(document, selected) && submit) submitLoginForm(document);
-              });
+              .catch(() => undefined);
           };
           const options = response.credentials.flatMap((credential) => [
             {
-              detail: "Fill password",
-              icon: "•••",
+              detail:
+                response.deviceSlots.length > 0
+                  ? "Verify with biometrics, then fill"
+                  : "Confirm master password, then fill",
+              icon: response.deviceSlots.length > 0 ? "◎" : "●",
               label: credential.username || "Saved login",
-              run: () => selectAndFill(credential.id, false),
+              run: () => authenticateAndFill(credential.id, false),
             },
             ...(response.credentials.length === 1
               ? [
                   {
-                    detail: "Fill and press Sign In",
+                    detail:
+                      response.deviceSlots.length > 0
+                        ? "Verify, fill, and press Sign In"
+                        : "Confirm, fill, and press Sign In",
                     icon: "→",
                     label: `Sign in as ${credential.username || "saved login"}`,
-                    run: () => selectAndFill(credential.id, true),
+                    run: () => authenticateAndFill(credential.id, true),
                   },
                 ]
               : []),

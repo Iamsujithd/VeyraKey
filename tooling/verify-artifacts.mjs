@@ -66,6 +66,16 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   if (/(?:^|[\s;])'unsafe-eval'(?:[\s;]|$)/u.test(extensionPolicy)) {
     throw new Error(`${browser} CSP enables unrestricted script evaluation`);
   }
+  const autofillSource = await readFile(
+    `apps/extension/.output/${browser}/content-scripts/autofill.js`,
+    "utf8",
+  );
+  if (
+    autofillSource.includes("zk-wallet.autofill-select.v1") ||
+    !autofillSource.includes("zk-wallet.authenticated-autofill-select.v1")
+  ) {
+    throw new Error(`${browser} contains an unauthenticated credential-selection path`);
+  }
 }
 
 const sbom = JSON.parse(await readFile("release/sbom.cdx.json", "utf8"));

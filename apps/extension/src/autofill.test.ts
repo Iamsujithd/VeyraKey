@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  AUTHENTICATED_AUTOFILL_SELECT_TYPE,
   AUTOFILL_REQUEST_TYPE,
   BIOMETRIC_AUTOFILL_REQUEST_TYPE,
   BIOMETRIC_FILL_TYPE,
@@ -14,6 +15,7 @@ import {
   isLoginAction,
   isUsernameField,
   MANUAL_AUTOFILL_REQUEST_TYPE,
+  parseAuthenticatedAutofillSelectRequest,
   parseAutofillRequest,
   parseBiometricAutofillRequest,
   parseBiometricFillRequest,
@@ -142,6 +144,37 @@ describe("extension automatic autofill", () => {
         type: MANUAL_AUTOFILL_REQUEST_TYPE,
         userInitiated: true,
         version: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("requires an explicit authentication method for every selected credential", () => {
+    const selection = {
+      credentialId: "login-id",
+      method: "biometric",
+      submit: false,
+      topUrl: "https://accounts.example.test/login",
+      type: AUTHENTICATED_AUTOFILL_SELECT_TYPE,
+      userInitiated: true,
+      version: 1,
+    };
+    expect(parseAuthenticatedAutofillSelectRequest(selection)).toEqual(selection);
+    expect(
+      parseAuthenticatedAutofillSelectRequest({
+        ...selection,
+        method: "none",
+      }),
+    ).toBeNull();
+    expect(
+      parseAuthenticatedAutofillSelectRequest({
+        ...selection,
+        submit: undefined,
+      }),
+    ).toBeNull();
+    expect(
+      parseAuthenticatedAutofillSelectRequest({
+        ...selection,
+        extra: "bypass",
       }),
     ).toBeNull();
   });

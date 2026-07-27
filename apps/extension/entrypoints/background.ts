@@ -12,8 +12,8 @@ import {
   CAPTURE_REQUEST_TYPE,
   type CaptureRequest,
   type CaptureResponse,
+  parseAuthenticatedAutofillSelectRequest,
   parseAutofillRequest,
-  parseAutofillSelectRequest,
   parseBiometricAutofillRequest,
   parseCaptureActionRequest,
   parseCapturePendingRequest,
@@ -154,9 +154,10 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener(
     async (message, sender): Promise<AutofillResponse | CaptureResponse | undefined> => {
+      const authenticatedSelection = parseAuthenticatedAutofillSelectRequest(message);
       const biometricAutofill = parseBiometricAutofillRequest(message);
       const manualAutofill = parseManualAutofillRequest(message);
-      const authenticatedAutofill = biometricAutofill ?? manualAutofill;
+      const authenticatedAutofill = authenticatedSelection ?? biometricAutofill ?? manualAutofill;
       if (authenticatedAutofill !== null) {
         if (!trustedOrigin(authenticatedAutofill.topUrl, sender) || sender.tab?.id === undefined) {
           return { status: "unavailable", version: 1 };
@@ -165,10 +166,20 @@ export default defineBackground(() => {
         const popupUrl = new URL(browser.runtime.getURL("/popup.html"));
         popupUrl.searchParams.set(
           "mode",
-          biometricAutofill === null ? "manual-autofill" : "biometric-autofill",
+          authenticatedSelection === null
+            ? biometricAutofill === null
+              ? "manual-autofill"
+              : "biometric-autofill"
+            : authenticatedSelection.method === "biometric"
+              ? "biometric-autofill"
+              : "manual-autofill",
         );
         popupUrl.searchParams.set("tabId", String(sender.tab.id));
         popupUrl.searchParams.set("topUrl", targetUrl.href);
+        if (authenticatedSelection !== null) {
+          popupUrl.searchParams.set("credentialId", authenticatedSelection.credentialId);
+          popupUrl.searchParams.set("submit", String(authenticatedSelection.submit));
+        }
         await browser.windows.create({
           focused: true,
           height: 650,
@@ -203,44 +214,14 @@ export default defineBackground(() => {
             }).allowed,
         );
         if (matching.length === 0) return { status: "no-match", version: 1 };
+        const state = service.getState();
         return {
           credentials: matching.map((login) => ({ id: login.id, username: login.username })),
+          deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
           displayHost: new URL(autofill.topUrl).hostname,
           status: "suggestions",
           version: 1,
         };
-      }
-
-      const selection = parseAutofillSelectRequest(message);
-      if (selection !== null) {
-        if (!trustedOrigin(selection.topUrl, sender)) {
-          return { status: "unavailable", version: 1 };
-        }
-        const logins = await unlockedLogins();
-        if (logins === null) {
-          const state = service.getState();
-          return {
-            deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
-            status: "locked",
-            version: 1,
-          };
-        }
-        const login = logins.find((candidate) => candidate.id === selection.credentialId);
-        if (login === undefined) return { status: "no-match", version: 1 };
-        const decision = decideAutofill({
-          credentials: [{ id: login.id, uris: login.uris }],
-          frameUrl: selection.topUrl,
-          topUrl: selection.topUrl,
-          userInitiated: true,
-        });
-        return decision.allowed
-          ? {
-              password: login.password,
-              status: "fill",
-              username: login.username,
-              version: 1,
-            }
-          : { status: "no-match", version: 1 };
       }
 
       const observed = parseUsernameObservedRequest(message);

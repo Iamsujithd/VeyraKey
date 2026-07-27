@@ -59,6 +59,17 @@ describe("extension popup", () => {
     ).toEqual({ method: "password", tabId: 7, topUrl: "https://example.test/login" });
     expect(
       authenticatedAutofillTarget(
+        "?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toEqual({
+      credentialId: "login-id",
+      method: "biometric",
+      submitAfterFill: false,
+      tabId: 7,
+      topUrl: "https://example.test/login",
+    });
+    expect(
+      authenticatedAutofillTarget(
         "?mode=biometric-autofill&tabId=7&topUrl=http%3A%2F%2Fexample.test%2Flogin",
       ),
     ).toBeNull();
@@ -67,9 +78,14 @@ describe("extension popup", () => {
         "?mode=biometric-autofill&tabId=-1&topUrl=https%3A%2F%2Fexample.test%2Flogin",
       ),
     ).toBeNull();
+    expect(
+      authenticatedAutofillTarget(
+        "?extra=bypass&mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toBeNull();
   });
 
-  it("biometrically fills an exact-origin login and immediately relocks", async () => {
+  it("requires fresh biometrics for a selected login even while the manager is unlocked", async () => {
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
       status: "locked",
@@ -89,8 +105,8 @@ describe("extension popup", () => {
     const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const vaultClient: VaultClient = {
       ...client(),
-      getState: () => locked,
-      initialize: async () => locked,
+      getState: () => unlocked,
+      initialize: async () => unlocked,
       listItems: async () => [
         {
           createdAt: "2026-07-27T00:00:00.000Z",
@@ -104,6 +120,18 @@ describe("extension popup", () => {
           uris: ["https://example.test"],
           username: "person@example.test",
         },
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "other-login-id",
+          notes: "",
+          password: "other-secret",
+          revisionId: "other-revision-id",
+          title: "Other Example",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://example.test"],
+          username: "other@example.test",
+        },
       ],
       lock,
       unlockWithDevice,
@@ -112,7 +140,7 @@ describe("extension popup", () => {
     window.history.replaceState(
       null,
       "",
-      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      "/?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
     );
 
     render(<App client={vaultClient} />);
@@ -125,7 +153,7 @@ describe("extension popup", () => {
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(7, {
         password: "synthetic-secret",
-        submit: true,
+        submit: false,
         topUrl: "https://example.test/login",
         type: "zk-wallet.biometric-fill.v1",
         username: "person@example.test",
@@ -134,6 +162,55 @@ describe("extension popup", () => {
     );
     expect(lock).toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
+  });
+
+  it("never releases a selected password when fresh biometric verification fails", async () => {
+    const unlocked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      itemCount: 1,
+      recovery: { status: "verified" },
+      status: "unlocked",
+      unlockedCompartments: [],
+      vaultId: "vault-id",
+    } as const;
+    const locked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlockWithDevice = vi.fn(async () => {
+      throw new Error("synthetic biometric cancellation");
+    });
+    const listItems = vi.fn();
+    const lock = vi.fn(() => locked);
+    const sendMessage = vi.fn();
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => unlocked,
+      initialize: async () => unlocked,
+      listItems,
+      lock,
+      unlockWithDevice,
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Use Touch ID or Biometrics" }));
+
+    expect(
+      await screen.findByText(
+        "Biometric verification was canceled or is unavailable on this device.",
+      ),
+    ).toBeVisible();
+    expect(unlockWithDevice).toHaveBeenCalledWith("device-slot");
+    expect(listItems).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(lock).toHaveBeenCalled();
   });
 
   it("fills after master-password entry in the protected extension page and relocks", async () => {

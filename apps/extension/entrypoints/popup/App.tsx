@@ -254,7 +254,9 @@ function createLocalVaultClient(): VaultClient {
 }
 
 interface AuthenticatedAutofillTarget {
+  readonly credentialId?: string;
   readonly method: "biometric" | "password";
+  readonly submitAfterFill?: boolean;
   readonly tabId: number;
   readonly topUrl: string;
 }
@@ -263,6 +265,18 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
   const parameters = new URLSearchParams(search);
   const mode = parameters.get("mode");
   if (!["biometric-autofill", "manual-autofill"].includes(mode ?? "")) return null;
+  const credentialId = parameters.get("credentialId");
+  const submit = parameters.get("submit");
+  if ((credentialId === null) !== (submit === null)) return null;
+  const expectedKeys =
+    credentialId === null ? "mode,tabId,topUrl" : "credentialId,mode,submit,tabId,topUrl";
+  if ([...parameters.keys()].sort().join(",") !== expectedKeys) return null;
+  if (
+    credentialId !== null &&
+    (!/^[A-Za-z0-9_-]{1,128}$/u.test(credentialId) || !["false", "true"].includes(submit ?? ""))
+  ) {
+    return null;
+  }
   const tabId = Number(parameters.get("tabId"));
   const topUrl = parameters.get("topUrl");
   if (!Number.isSafeInteger(tabId) || tabId < 0 || topUrl === null) return null;
@@ -270,6 +284,7 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
     const parsed = new URL(topUrl);
     return parsed.protocol === "https:" && parsed.username === "" && parsed.password === ""
       ? {
+          ...(credentialId === null ? {} : { credentialId, submitAfterFill: submit === "true" }),
           method: mode === "biometric-autofill" ? "biometric" : "password",
           tabId,
           topUrl: parsed.href,
@@ -294,7 +309,7 @@ function AuthenticatedAutofill({
   const [busy, setBusy] = useState(false);
   const [manualPassword, setManualPassword] = useState("");
   const [useMasterPassword, setUseMasterPassword] = useState(target.method === "password");
-  const [submitAfterFill, setSubmitAfterFill] = useState(true);
+  const [submitAfterFill, setSubmitAfterFill] = useState(target.submitAfterFill ?? true);
   const [matches, setMatches] = useState<readonly LoginItem[]>([]);
   const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
 
@@ -367,6 +382,7 @@ function AuthenticatedAutofill({
     return (await client.listItems()).filter(
       (item): item is LoginItem =>
         item.type === "login" &&
+        (target.credentialId === undefined || item.id === target.credentialId) &&
         decideAutofill({
           credentials: [{ id: item.id, uris: item.uris }],
           frameUrl: target.topUrl,

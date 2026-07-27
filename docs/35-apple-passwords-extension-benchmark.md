@@ -77,7 +77,7 @@ principles as follows:
 | Password health checks | Implemented locally |
 | Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
 | Touch ID, Windows Hello, or security-key vault unlock | Implemented through capability-gated WebAuthn PRF |
-| Biometric exact-origin AutoFill while the manager stays locked | Implemented as a transient session that relocks immediately after filling |
+| Biometric exact-origin AutoFill | Implemented as a fresh ceremony for every credential release, including while the manager session is already unlocked |
 | Master-password AutoFill while the manager stays locked | Implemented in a protected extension-origin sheet that clears the submitted password and relocks after filling |
 | Autofocused and replaced multi-step login fields | Implemented through focus, pointer, page-restore, visibility, and DOM-replacement observation |
 | Fill and submit | Implemented as a separate explicit action; ambiguous forms fail closed |

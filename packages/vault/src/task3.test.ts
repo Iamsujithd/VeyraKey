@@ -257,7 +257,8 @@ describe("Task 3 key hierarchy and recovery", () => {
     const encryptedVault = structuredClone(await source.repository.read()) as {
       recoverySlot: { wrappedKeys: { credential: { ciphertext: string } } };
     };
-    encryptedVault.recoverySlot.wrappedKeys.credential.ciphertext = `${encryptedVault.recoverySlot.wrappedKeys.credential.ciphertext.slice(0, -1)}A`;
+    const ciphertext = encryptedVault.recoverySlot.wrappedKeys.credential.ciphertext;
+    encryptedVault.recoverySlot.wrappedKeys.credential.ciphertext = `${ciphertext.startsWith("A") ? "B" : "A"}${ciphertext.slice(1)}`;
 
     const restored = serviceFor();
     await expect(

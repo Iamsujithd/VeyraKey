@@ -1,5 +1,6 @@
 export const AUTOFILL_REQUEST_TYPE = "zk-wallet.autofill-request.v1" as const;
-export const AUTOFILL_SELECT_TYPE = "zk-wallet.autofill-select.v1" as const;
+export const AUTHENTICATED_AUTOFILL_SELECT_TYPE =
+  "zk-wallet.authenticated-autofill-select.v1" as const;
 export const BIOMETRIC_AUTOFILL_REQUEST_TYPE = "zk-wallet.biometric-autofill-request.v1" as const;
 export const MANUAL_AUTOFILL_REQUEST_TYPE = "zk-wallet.manual-autofill-request.v1" as const;
 export const BIOMETRIC_FILL_TYPE = "zk-wallet.biometric-fill.v1" as const;
@@ -19,9 +20,11 @@ export interface AutofillRequest extends OriginRequest {
   readonly type: typeof AUTOFILL_REQUEST_TYPE;
 }
 
-export interface AutofillSelectRequest extends OriginRequest {
+export interface AuthenticatedAutofillSelectRequest extends OriginRequest {
   readonly credentialId: string;
-  readonly type: typeof AUTOFILL_SELECT_TYPE;
+  readonly method: "biometric" | "password";
+  readonly submit: boolean;
+  readonly type: typeof AUTHENTICATED_AUTOFILL_SELECT_TYPE;
 }
 
 export interface BiometricAutofillRequest extends OriginRequest {
@@ -73,14 +76,9 @@ export type AutofillResponse =
   | { readonly status: "opening-authentication"; readonly version: 1 }
   | {
       readonly credentials: readonly { readonly id: string; readonly username: string }[];
+      readonly deviceSlots: readonly { readonly id: string }[];
       readonly displayHost: string;
       readonly status: "suggestions";
-      readonly version: 1;
-    }
-  | {
-      readonly password: string;
-      readonly status: "fill";
-      readonly username: string;
       readonly version: 1;
     };
 
@@ -120,16 +118,23 @@ export function parseAutofillRequest(value: unknown): AutofillRequest | null {
     : null;
 }
 
-export function parseAutofillSelectRequest(value: unknown): AutofillSelectRequest | null {
+function validCredentialId(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(value);
+}
+
+export function parseAuthenticatedAutofillSelectRequest(
+  value: unknown,
+): AuthenticatedAutofillSelectRequest | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const request = value as Record<string, unknown>;
   return Object.keys(request).sort().join(",") ===
-    "credentialId,topUrl,type,userInitiated,version" &&
-    request.type === AUTOFILL_SELECT_TYPE &&
-    typeof request.credentialId === "string" &&
-    /^[A-Za-z0-9_-]{1,128}$/u.test(request.credentialId) &&
+    "credentialId,method,submit,topUrl,type,userInitiated,version" &&
+    request.type === AUTHENTICATED_AUTOFILL_SELECT_TYPE &&
+    validCredentialId(request.credentialId) &&
+    (request.method === "biometric" || request.method === "password") &&
+    typeof request.submit === "boolean" &&
     validOriginRequest(request)
-    ? (request as unknown as AutofillSelectRequest)
+    ? (request as unknown as AuthenticatedAutofillSelectRequest)
     : null;
 }
 
