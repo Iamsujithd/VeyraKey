@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VaultClient } from "@zk-wallet/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App";
+import { App, biometricAutofillTarget } from "./App";
 
 function client(): VaultClient {
   const locked = {
@@ -32,7 +32,11 @@ function client(): VaultClient {
 }
 
 describe("extension popup", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("wires the shared vault flow to the extension surface", async () => {
     render(<App client={client()} />);
@@ -40,6 +44,91 @@ describe("extension popup", () => {
     expect(await screen.findByRole("heading", { name: "Vault locked" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unlock vault" })).toBeInTheDocument();
     expect(screen.getByText("Browser extension")).toBeInTheDocument();
+  });
+
+  it("accepts only a strict HTTPS biometric autofill target", () => {
+    expect(
+      biometricAutofillTarget(
+        "?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toEqual({ tabId: 7, topUrl: "https://example.test/login" });
+    expect(
+      biometricAutofillTarget(
+        "?mode=biometric-autofill&tabId=7&topUrl=http%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toBeNull();
+    expect(
+      biometricAutofillTarget(
+        "?mode=biometric-autofill&tabId=-1&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toBeNull();
+  });
+
+  it("biometrically fills an exact-origin login and immediately relocks", async () => {
+    const locked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlocked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      itemCount: 1,
+      recovery: { status: "verified" },
+      status: "unlocked",
+      unlockedCompartments: [],
+      vaultId: "vault-id",
+    } as const;
+    const unlockWithDevice = vi.fn(async () => unlocked);
+    const lock = vi.fn(() => locked);
+    const sendMessage = vi.fn(async () => ({ filled: true, submitted: true }));
+    const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: async () => [
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "login-id",
+          notes: "",
+          password: "synthetic-secret",
+          revisionId: "revision-id",
+          title: "Example",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://example.test"],
+          username: "person@example.test",
+        },
+      ],
+      lock,
+      unlockWithDevice,
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+    const authenticate = await screen.findByRole("button", {
+      name: "Use Touch ID or Biometrics",
+    });
+    fireEvent.click(authenticate);
+
+    await waitFor(() => expect(unlockWithDevice).toHaveBeenCalledWith("device-slot"));
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(7, {
+        password: "synthetic-secret",
+        submit: true,
+        topUrl: "https://example.test/login",
+        type: "zk-wallet.biometric-fill.v1",
+        username: "person@example.test",
+        version: 1,
+      }),
+    );
+    expect(lock).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
   });
 
   it("shows an exact-origin confirmation before saving a captured login", async () => {

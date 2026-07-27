@@ -1411,7 +1411,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   onClick={() => void unlockDevice(selectedDeviceSlotId)}
                   type="button"
                 >
-                  Unlock with enrolled device
+                  Unlock with Touch ID or biometrics
                 </button>
               </div>
             ) : screenState.deviceUnlock.slots.length > 0 ? (
@@ -2281,7 +2281,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       />
                     </label>
                     <button className="secondary-button" disabled={busy} type="submit">
-                      Enroll this device with PRF
+                      Set up Touch ID or biometrics
                     </button>
                   </form>
                 ) : (

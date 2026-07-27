@@ -2,6 +2,7 @@ import {
   AUTOFILL_REQUEST_TYPE,
   AUTOFILL_SELECT_TYPE,
   type AutofillResponse,
+  BIOMETRIC_AUTOFILL_REQUEST_TYPE,
   CAPTURE_CONFIRM_TYPE,
   CAPTURE_DISMISS_TYPE,
   CAPTURE_PENDING_TYPE,
@@ -11,6 +12,8 @@ import {
   fillLoginFields,
   isLoginAction,
   isUsernameField,
+  parseBiometricFillRequest,
+  submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "../src/autofill";
 
@@ -242,31 +245,71 @@ export default defineContentScript({
           version: 1,
         })
         .then((response: AutofillResponse | undefined) => {
+          if (response?.status === "locked") {
+            prompt(
+              "suggestions",
+              "Passwords Locked",
+              new URL(location.href).hostname,
+              [
+                {
+                  detail:
+                    response.deviceSlots.length > 0
+                      ? "Fill without leaving the vault unlocked"
+                      : "Open the wallet and enroll this device",
+                  label:
+                    response.deviceSlots.length > 0
+                      ? "Use Touch ID or Biometrics"
+                      : "Open Passwords",
+                  run: () => {
+                    closePrompt();
+                    void browser.runtime
+                      .sendMessage({
+                        topUrl: location.href,
+                        type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+                        userInitiated: true,
+                        version: 1,
+                      })
+                      .catch(() => undefined);
+                  },
+                },
+              ],
+              anchor,
+            );
+            return;
+          }
           if (response?.status !== "suggestions") return;
-          prompt(
-            "suggestions",
-            "Passwords",
-            response.displayHost,
-            response.credentials.map((credential) => ({
-              detail: response.displayHost,
+          const selectAndFill = (credentialId: string, submit: boolean) => {
+            closePrompt();
+            void browser.runtime
+              .sendMessage({
+                credentialId,
+                topUrl: location.href,
+                type: AUTOFILL_SELECT_TYPE,
+                userInitiated: true,
+                version: 1,
+              })
+              .then((selected: AutofillResponse | undefined) => {
+                if (selected?.status !== "fill") return;
+                if (fillLoginFields(document, selected) && submit) submitLoginForm(document);
+              });
+          };
+          const options = response.credentials.flatMap((credential) => [
+            {
+              detail: "Fill password",
               label: credential.username || "Saved login",
-              run: () => {
-                closePrompt();
-                void browser.runtime
-                  .sendMessage({
-                    credentialId: credential.id,
-                    topUrl: location.href,
-                    type: AUTOFILL_SELECT_TYPE,
-                    userInitiated: true,
-                    version: 1,
-                  })
-                  .then((selected: AutofillResponse | undefined) => {
-                    if (selected?.status === "fill") fillLoginFields(document, selected);
-                  });
-              },
-            })),
-            anchor,
-          );
+              run: () => selectAndFill(credential.id, false),
+            },
+            ...(response.credentials.length === 1
+              ? [
+                  {
+                    detail: "Fill and press Sign In",
+                    label: `Sign in as ${credential.username || "saved login"}`,
+                    run: () => selectAndFill(credential.id, true),
+                  },
+                ]
+              : []),
+          ]);
+          prompt("suggestions", "Passwords", response.displayHost, options, anchor);
         })
         .catch(() => undefined)
         .finally(() => {
@@ -395,9 +438,6 @@ export default defineContentScript({
       (event) => {
         if (!event.isTrusted || !(event.target instanceof HTMLInputElement)) return;
         rememberUsername(event.target);
-        if (event.target.type === "password" && event.target.value.length > 0) {
-          offerCapture(event.target);
-        }
       },
       true,
     );
@@ -444,6 +484,21 @@ export default defineContentScript({
       },
       true,
     );
+    browser.runtime.onMessage.addListener((message, sender) => {
+      const request = parseBiometricFillRequest(message);
+      if (
+        request === null ||
+        sender.id !== browser.runtime.id ||
+        sender.tab !== undefined ||
+        new URL(request.topUrl).origin !== location.origin
+      ) {
+        return;
+      }
+      const filled = fillLoginFields(document, request);
+      const submitted = filled && request.submit ? submitLoginForm(document) : false;
+      closePrompt();
+      return Promise.resolve({ filled, submitted });
+    });
     showPendingCapture();
   },
 });

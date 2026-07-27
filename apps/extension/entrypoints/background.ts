@@ -14,6 +14,7 @@ import {
   type CaptureResponse,
   parseAutofillRequest,
   parseAutofillSelectRequest,
+  parseBiometricAutofillRequest,
   parseCaptureActionRequest,
   parseCapturePendingRequest,
   parseCaptureRequest,
@@ -152,13 +153,40 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener(
     async (message, sender): Promise<AutofillResponse | CaptureResponse | undefined> => {
+      const biometricAutofill = parseBiometricAutofillRequest(message);
+      if (biometricAutofill !== null) {
+        if (!trustedOrigin(biometricAutofill.topUrl, sender) || sender.tab?.id === undefined) {
+          return { status: "unavailable", version: 1 };
+        }
+        const targetUrl = new URL(biometricAutofill.topUrl);
+        const popupUrl = new URL(browser.runtime.getURL("/popup.html"));
+        popupUrl.searchParams.set("mode", "biometric-autofill");
+        popupUrl.searchParams.set("tabId", String(sender.tab.id));
+        popupUrl.searchParams.set("topUrl", targetUrl.href);
+        await browser.windows.create({
+          focused: true,
+          height: 650,
+          type: "popup",
+          url: popupUrl.href,
+          width: 430,
+        });
+        return { status: "opening-biometric", version: 1 };
+      }
+
       const autofill = parseAutofillRequest(message);
       if (autofill !== null) {
         if (!trustedOrigin(autofill.topUrl, sender)) {
           return { status: "unavailable", version: 1 };
         }
         const logins = await unlockedLogins();
-        if (logins === null) return { status: "locked", version: 1 };
+        if (logins === null) {
+          const state = service.getState();
+          return {
+            deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
+            status: "locked",
+            version: 1,
+          };
+        }
         const matching = logins.filter(
           (login) =>
             decideAutofill({
@@ -183,7 +211,14 @@ export default defineBackground(() => {
           return { status: "unavailable", version: 1 };
         }
         const logins = await unlockedLogins();
-        if (logins === null) return { status: "locked", version: 1 };
+        if (logins === null) {
+          const state = service.getState();
+          return {
+            deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
+            status: "locked",
+            version: 1,
+          };
+        }
         const login = logins.find((candidate) => candidate.id === selection.credentialId);
         if (login === undefined) return { status: "no-match", version: 1 };
         const decision = decideAutofill({

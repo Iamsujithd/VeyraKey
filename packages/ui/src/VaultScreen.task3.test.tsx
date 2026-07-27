@@ -121,7 +121,9 @@ describe("VaultScreen Task 3 flows", () => {
     render(<VaultScreen client={client} surface="Web application" />);
     await screen.findByRole("heading", { name: "Vault locked" });
 
-    expect(screen.getByRole("button", { name: "Unlock with enrolled device" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Unlock with Touch ID or biometrics" }),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "abandoned password" },
     });
@@ -134,7 +136,7 @@ describe("VaultScreen Task 3 flows", () => {
     fireEvent.change(screen.getByLabelText("Device unlock credential"), {
       target: { value: "device-slot-2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Unlock with enrolled device" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with Touch ID or biometrics" }));
     await waitFor(() => expect(mocks.unlockWithDevice).toHaveBeenCalledWith("device-slot-2"));
     expect(screen.getByLabelText("Recovery Kit")).toHaveValue("");
   });
@@ -310,7 +312,7 @@ describe("VaultScreen Task 3 flows", () => {
 
     const enrollmentPassword = screen.getByLabelText("Master password for device enrollment");
     fireEvent.change(enrollmentPassword, { target: { value: "temporary secret" } });
-    fireEvent.click(screen.getByRole("button", { name: "Enroll this device with PRF" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up Touch ID or biometrics" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/device enrollment failed/i);
     expect(enrollmentPassword).toHaveValue("");

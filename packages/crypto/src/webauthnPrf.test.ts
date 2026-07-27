@@ -32,7 +32,7 @@ function supportedPlatform() {
 }
 
 describe("WebAuthn PRF provider", () => {
-  it("requires positive client capability and an HTTPS web origin", async () => {
+  it("requires positive client capability and a secure web or extension origin", async () => {
     const supported = supportedPlatform();
     await expect(
       createWebAuthnPrfProvider({ platform: supported.platform }).getCapability(),
@@ -52,6 +52,15 @@ describe("WebAuthn PRF provider", () => {
     };
     await expect(
       createWebAuthnPrfProvider({ platform: extensionOrigin }).getCapability(),
+    ).resolves.toBe("supported");
+
+    const insecureOrigin: WebAuthnPrfPlatform = {
+      ...supported.platform,
+      hostname: "example.test",
+      protocol: "http:",
+    };
+    await expect(
+      createWebAuthnPrfProvider({ platform: insecureOrigin }).getCapability(),
     ).resolves.toBe("unsupported");
   });
 

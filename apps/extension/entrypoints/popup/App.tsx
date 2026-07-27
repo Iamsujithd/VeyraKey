@@ -10,8 +10,9 @@ import {
   parseOtpAuthUri,
 } from "@zk-wallet/security";
 import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
-import { createVaultService, type LoginItem } from "@zk-wallet/vault";
-import { useState } from "react";
+import { createVaultService, type LoginItem, type VaultPublicState } from "@zk-wallet/vault";
+import { useEffect, useState } from "react";
+import { BIOMETRIC_FILL_TYPE } from "../../src/autofill";
 import { withExtensionGoogleDriveSync } from "../../src/googleDrive";
 import {
   ExtensionSessionCoordinator,
@@ -252,10 +253,209 @@ function createLocalVaultClient(): VaultClient {
   return withExtensionSession(withExtensionGoogleDriveSync(client, crypto), coordinator);
 }
 
+interface BiometricAutofillTarget {
+  readonly tabId: number;
+  readonly topUrl: string;
+}
+
+export function biometricAutofillTarget(search: string): BiometricAutofillTarget | null {
+  const parameters = new URLSearchParams(search);
+  if (parameters.get("mode") !== "biometric-autofill") return null;
+  const tabId = Number(parameters.get("tabId"));
+  const topUrl = parameters.get("topUrl");
+  if (!Number.isSafeInteger(tabId) || tabId < 0 || topUrl === null) return null;
+  try {
+    const parsed = new URL(topUrl);
+    return parsed.protocol === "https:" && parsed.username === "" && parsed.password === ""
+      ? { tabId, topUrl: parsed.href }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function BiometricAutofill({
+  client,
+  target,
+}: {
+  readonly client: VaultClient;
+  readonly target: BiometricAutofillTarget;
+}) {
+  const [state, setState] = useState<VaultPublicState | { readonly status: "preparing" }>({
+    status: "preparing",
+  });
+  const [status, setStatus] = useState("Preparing encrypted vault…");
+  const [busy, setBusy] = useState(false);
+  const [submitAfterFill, setSubmitAfterFill] = useState(true);
+  const [matches, setMatches] = useState<readonly LoginItem[]>([]);
+  const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = client.subscribe((nextState) => {
+      if (active) setState(nextState);
+    });
+    void client
+      .initialize()
+      .then((nextState) => {
+        if (!active) return;
+        setState(nextState);
+        setStatus(
+          nextState.status === "locked"
+            ? "Confirm your identity to release one matching password."
+            : "Biometric AutoFill is ready.",
+        );
+      })
+      .catch(() => {
+        if (active) setStatus("The encrypted local vault could not be opened.");
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+      client.lock();
+    };
+  }, [client]);
+
+  const relock = () => {
+    client.lock();
+    setMatches([]);
+  };
+
+  const fill = async (login: LoginItem) => {
+    setBusy(true);
+    setStatus(`Filling ${new URL(target.topUrl).hostname}…`);
+    try {
+      const response = (await browser.tabs.sendMessage(target.tabId, {
+        password: login.password,
+        submit: submitAfterFill,
+        topUrl: target.topUrl,
+        type: BIOMETRIC_FILL_TYPE,
+        username: login.username,
+        version: 1,
+      })) as { readonly filled?: boolean; readonly submitted?: boolean } | undefined;
+      if (response?.filled !== true) {
+        setStatus("The login form changed before the password could be filled.");
+        return;
+      }
+      setStatus(
+        response.submitted === true
+          ? "Password filled and sign-in submitted."
+          : "Password filled. You can submit the form when ready.",
+      );
+      window.close();
+    } catch {
+      setStatus("The password could not be delivered to the original secure page.");
+    } finally {
+      relock();
+      setBusy(false);
+    }
+  };
+
+  const authenticate = async () => {
+    const slot = slots[0];
+    if (slot === undefined || client.listItems === undefined) {
+      setStatus("Enroll this device from Passwords settings before using biometric AutoFill.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Waiting for Touch ID, Windows Hello, or your security key…");
+    try {
+      await client.unlockWithDevice(slot.id);
+      const logins = (await client.listItems()).filter(
+        (item): item is LoginItem =>
+          item.type === "login" &&
+          decideAutofill({
+            credentials: [{ id: item.id, uris: item.uris }],
+            frameUrl: target.topUrl,
+            topUrl: target.topUrl,
+            userInitiated: true,
+          }).allowed,
+      );
+      if (logins.length === 0) {
+        setStatus("No exact-origin password is saved for this page.");
+        relock();
+      } else if (logins.length === 1) {
+        const login = logins[0];
+        if (login !== undefined) await fill(login);
+      } else {
+        setMatches(logins);
+        setStatus("Choose the account to fill.");
+      }
+    } catch {
+      setStatus("Biometric verification was canceled or is unavailable on this device.");
+      relock();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="biometric-shell">
+      <section className="biometric-card" aria-labelledby="biometric-title">
+        <span className="biometric-symbol" aria-hidden="true">
+          ◎
+        </span>
+        <p className="eyebrow">Passwords</p>
+        <h1 id="biometric-title">Biometric AutoFill</h1>
+        <p className="biometric-host">{new URL(target.topUrl).hostname}</p>
+        <p className="biometric-copy">
+          Only the exact matching password is released. The vault relocks immediately after filling.
+        </p>
+        <label className="biometric-toggle">
+          <input
+            checked={submitAfterFill}
+            disabled={busy}
+            onChange={(event) => setSubmitAfterFill(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Fill and press Sign In</span>
+        </label>
+        {matches.length === 0 ? (
+          <button
+            className="biometric-action"
+            disabled={busy || state.status === "preparing"}
+            onClick={() => void authenticate()}
+            type="button"
+          >
+            {busy ? "Verifying…" : "Use Touch ID or Biometrics"}
+          </button>
+        ) : (
+          <fieldset className="biometric-accounts">
+            <legend>Matching accounts</legend>
+            {matches.map((login) => (
+              <button disabled={busy} key={login.id} onClick={() => void fill(login)} type="button">
+                <strong>{login.username || "Saved login"}</strong>
+                <span>Fill this account</span>
+              </button>
+            ))}
+          </fieldset>
+        )}
+        <p className="biometric-status" aria-live="polite">
+          {status}
+        </p>
+        <button
+          className="biometric-cancel"
+          onClick={() => {
+            relock();
+            window.close();
+          }}
+          type="button"
+        >
+          Cancel
+        </button>
+      </section>
+    </main>
+  );
+}
+
 export function App({ client }: AppProps) {
   const [vaultClient] = useState(() => client ?? createLocalVaultClient());
+  const [biometricTarget] = useState(() => biometricAutofillTarget(globalThis.location.search));
   const [fillStatus, setFillStatus] = useState("");
   const [capture, setCapture] = useState<CaptureProposal | null>(null);
+  if (biometricTarget !== null) {
+    return <BiometricAutofill client={vaultClient} target={biometricTarget} />;
+  }
   return (
     <>
       <VaultScreen

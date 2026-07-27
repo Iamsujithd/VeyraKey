@@ -362,6 +362,8 @@ function defaultWebAuthnPrfPlatform(): WebAuthnPrfPlatform | null {
 function isEligibleWebOrigin(platform: WebAuthnPrfPlatform): boolean {
   return (
     platform.protocol === "https:" ||
+    platform.protocol === "chrome-extension:" ||
+    platform.protocol === "moz-extension:" ||
     (platform.protocol === "http:" &&
       (platform.hostname === "localhost" || platform.hostname === "127.0.0.1"))
   );

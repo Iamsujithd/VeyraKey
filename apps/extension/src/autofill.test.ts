@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUTOFILL_REQUEST_TYPE,
+  BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+  BIOMETRIC_FILL_TYPE,
   CAPTURE_CONFIRM_TYPE,
   CAPTURE_PENDING_TYPE,
   CAPTURE_REQUEST_TYPE,
@@ -11,10 +13,13 @@ import {
   isLoginAction,
   isUsernameField,
   parseAutofillRequest,
+  parseBiometricAutofillRequest,
+  parseBiometricFillRequest,
   parseCaptureActionRequest,
   parseCapturePendingRequest,
   parseCaptureRequest,
   parseUsernameObservedRequest,
+  submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "./autofill";
 
@@ -67,6 +72,58 @@ describe("extension automatic autofill", () => {
     expect(username?.value).toBe("person@example.test");
     expect(password?.value).toBe("secret");
     expect(inputEvents).toBe(2);
+  });
+
+  it("submits only one unambiguous filled login form after explicit selection", () => {
+    document.body.innerHTML = `
+      <form>
+        <input autocomplete="username" value="person@example.test">
+        <input type="password" autocomplete="current-password" value="secret">
+        <button type="submit">Sign in</button>
+      </form>
+    `;
+    const form = document.querySelector("form");
+    const button = document.querySelector("button");
+    if (form === null || button === null) throw new Error("Expected login fixture");
+    const requestSubmit = vi.spyOn(form, "requestSubmit").mockImplementation(() => undefined);
+
+    expect(submitLoginForm(document)).toBe(true);
+    expect(requestSubmit).toHaveBeenCalledWith(button);
+
+    form.insertAdjacentHTML("beforeend", '<button type="submit">Continue</button>');
+    expect(submitLoginForm(document)).toBe(false);
+    expect(requestSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("validates biometric handoff messages and secure target origins", () => {
+    expect(
+      parseBiometricAutofillRequest({
+        topUrl: "https://accounts.example.test/login",
+        type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }),
+    ).not.toBeNull();
+    expect(
+      parseBiometricFillRequest({
+        password: "secret",
+        submit: true,
+        topUrl: "https://accounts.example.test/login",
+        type: BIOMETRIC_FILL_TYPE,
+        username: "person@example.test",
+        version: 1,
+      }),
+    ).not.toBeNull();
+    expect(
+      parseBiometricFillRequest({
+        password: "secret",
+        submit: true,
+        topUrl: "http://accounts.example.test/login",
+        type: BIOMETRIC_FILL_TYPE,
+        username: "person@example.test",
+        version: 1,
+      }),
+    ).toBeNull();
   });
 
   it("does not overwrite fields or fill password-creation forms", () => {

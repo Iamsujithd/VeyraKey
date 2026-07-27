@@ -76,7 +76,10 @@ principles as follows:
 | Reduced transparency and reduced motion | Implemented |
 | Password health checks | Implemented locally |
 | Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
-| Native Apple biometric sheet | Not available to a Chrome extension; use browser/platform authentication when added |
+| Touch ID, Windows Hello, or security-key vault unlock | Implemented through capability-gated WebAuthn PRF |
+| Biometric exact-origin AutoFill while the manager stays locked | Implemented as a transient session that relocks immediately after filling |
+| Fill and submit | Implemented as a separate explicit action; ambiguous forms fail closed |
+| Native Apple Passwords sheet | Not available to Chrome; the extension invokes the browser/platform WebAuthn sheet |
 | Native passkey provider integration | Future work |
 | Password sharing groups | Future work |
 | Wi-Fi password manager | Future work |
@@ -104,4 +107,5 @@ principles as follows:
 - [Password security recommendations](https://support.apple.com/guide/security/password-security-recommendations-sec7aefe77c3/web)
 - [Apple Passwords and iCloud Keychain security](https://support.apple.com/guide/security/password-security-sec1c89c6f3b/web)
 - [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/)
-
+- [Chromium origins that support WebAuthn](https://chromium.googlesource.com/chromium/src/+/main/content/browser/webauth/origins.md)
+- [WebAuthn Level 3 PRF extension](https://www.w3.org/TR/webauthn-3/#prf-extension)

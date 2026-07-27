@@ -147,6 +147,15 @@ await send(
   },
   wakePopupSession,
 ).catch(() => undefined);
+const extensionPrfCapability = await evaluate(
+  wakePopupSession,
+  `globalThis.PublicKeyCredential?.getClientCapabilities?.().then(capabilities=>capabilities["extension:prf"]===true)`,
+);
+assert.equal(
+  extensionPrfCapability,
+  true,
+  "Extension origin did not report WebAuthn PRF capability",
+);
 await send(
   "Page.navigate",
   { url: `${fixtureUrl}?after-worker-restart=1` },
@@ -189,6 +198,7 @@ console.log(
       "HTTPS content script injected",
       "pending credential survived service-worker termination",
       "save prompt restored after navigation",
+      "extension origin reported WebAuthn PRF capability",
     ],
   }),
 );

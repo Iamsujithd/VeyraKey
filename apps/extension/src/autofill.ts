@@ -1,5 +1,7 @@
 export const AUTOFILL_REQUEST_TYPE = "zk-wallet.autofill-request.v1" as const;
 export const AUTOFILL_SELECT_TYPE = "zk-wallet.autofill-select.v1" as const;
+export const BIOMETRIC_AUTOFILL_REQUEST_TYPE = "zk-wallet.biometric-autofill-request.v1" as const;
+export const BIOMETRIC_FILL_TYPE = "zk-wallet.biometric-fill.v1" as const;
 export const CAPTURE_REQUEST_TYPE = "zk-wallet.capture-request.v1" as const;
 export const CAPTURE_CONFIRM_TYPE = "zk-wallet.capture-confirm.v1" as const;
 export const CAPTURE_DISMISS_TYPE = "zk-wallet.capture-dismiss.v1" as const;
@@ -19,6 +21,19 @@ export interface AutofillRequest extends OriginRequest {
 export interface AutofillSelectRequest extends OriginRequest {
   readonly credentialId: string;
   readonly type: typeof AUTOFILL_SELECT_TYPE;
+}
+
+export interface BiometricAutofillRequest extends OriginRequest {
+  readonly type: typeof BIOMETRIC_AUTOFILL_REQUEST_TYPE;
+}
+
+export interface BiometricFillRequest {
+  readonly password: string;
+  readonly submit: boolean;
+  readonly topUrl: string;
+  readonly type: typeof BIOMETRIC_FILL_TYPE;
+  readonly username: string;
+  readonly version: 1;
 }
 
 export interface CaptureRequest extends OriginRequest {
@@ -44,7 +59,13 @@ export interface UsernameObservedRequest extends OriginRequest {
 }
 
 export type AutofillResponse =
-  | { readonly status: "locked" | "no-match" | "unavailable"; readonly version: 1 }
+  | { readonly status: "no-match" | "unavailable"; readonly version: 1 }
+  | {
+      readonly deviceSlots: readonly { readonly id: string }[];
+      readonly status: "locked";
+      readonly version: 1;
+    }
+  | { readonly status: "opening-biometric"; readonly version: 1 }
   | {
       readonly credentials: readonly { readonly id: string; readonly username: string }[];
       readonly displayHost: string;
@@ -105,6 +126,43 @@ export function parseAutofillSelectRequest(value: unknown): AutofillSelectReques
     validOriginRequest(request)
     ? (request as unknown as AutofillSelectRequest)
     : null;
+}
+
+export function parseBiometricAutofillRequest(value: unknown): BiometricAutofillRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") === "topUrl,type,userInitiated,version" &&
+    request.type === BIOMETRIC_AUTOFILL_REQUEST_TYPE &&
+    validOriginRequest(request)
+    ? (request as unknown as BiometricAutofillRequest)
+    : null;
+}
+
+export function parseBiometricFillRequest(value: unknown): BiometricFillRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  if (
+    Object.keys(request).sort().join(",") !== "password,submit,topUrl,type,username,version" ||
+    request.type !== BIOMETRIC_FILL_TYPE ||
+    request.version !== 1 ||
+    typeof request.password !== "string" ||
+    request.password.length === 0 ||
+    request.password.length > 16_384 ||
+    typeof request.username !== "string" ||
+    request.username.length > 4_096 ||
+    typeof request.submit !== "boolean" ||
+    typeof request.topUrl !== "string"
+  ) {
+    return null;
+  }
+  try {
+    const url = new URL(request.topUrl);
+    return url.protocol === "https:" && url.username === "" && url.password === ""
+      ? (request as unknown as BiometricFillRequest)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseCaptureRequest(
@@ -234,6 +292,27 @@ export function fillLoginFields(
   };
   if (fields.username !== undefined) setValue(fields.username, credential.username);
   setValue(fields.password, credential.password);
+  return true;
+}
+
+export function submitLoginForm(document: Document): boolean {
+  const password = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].find(
+    (input) =>
+      input.isConnected &&
+      !input.disabled &&
+      !input.readOnly &&
+      input.autocomplete !== "new-password" &&
+      input.value.length > 0,
+  );
+  const form = password?.form;
+  if (form === null || form === undefined) return false;
+  const submitters = [
+    ...form.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
+      'button, input[type="submit"], input[type="button"]',
+    ),
+  ].filter((element) => element.isConnected && !element.disabled && isLoginAction(element));
+  if (submitters.length !== 1) return false;
+  form.requestSubmit(submitters[0]);
   return true;
 }
 
