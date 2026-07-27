@@ -3,11 +3,16 @@ import {
   IndexedDbItemRevisionRepository,
   IndexedDbVaultHeaderRepository,
 } from "@zk-wallet/persistence";
-import { decideAutofill } from "@zk-wallet/security";
+import { decideAutofill, decideCredentialCapture } from "@zk-wallet/security";
 import { createVaultService, type LoginItem } from "@zk-wallet/vault";
 import {
   type AutofillResponse,
+  CAPTURE_CONFIRM_TYPE,
+  CAPTURE_REQUEST_TYPE,
+  type CaptureResponse,
   parseAutofillRequest,
+  parseAutofillSelectRequest,
+  parseCaptureRequest,
 } from "../src/autofill";
 import { ExtensionSessionCoordinator } from "../src/session";
 
@@ -48,25 +53,19 @@ export default defineBackground(() => {
   coordinator.bind(service);
   const initialized = coordinator.initialize().then(() => service.initialize());
 
-  browser.runtime.onMessage.addListener(async (message, sender): Promise<AutofillResponse | void> => {
-    const request = parseAutofillRequest(message);
-    if (request === null) return;
-    let senderOrigin: string;
-    let requestOrigin: string;
+  const trustedOrigin = (topUrl: string, sender: Browser.runtime.MessageSender): boolean => {
     try {
-      senderOrigin = new URL(sender.url ?? "").origin;
-      requestOrigin = new URL(request.topUrl).origin;
+      return (
+        sender.id === browser.runtime.id &&
+        sender.frameId === 0 &&
+        sender.tab !== undefined &&
+        new URL(sender.url ?? "").origin === new URL(topUrl).origin
+      );
     } catch {
-      return { status: "unavailable", version: 1 };
+      return false;
     }
-    if (
-      sender.id !== browser.runtime.id ||
-      sender.frameId !== 0 ||
-      sender.tab === undefined ||
-      senderOrigin !== requestOrigin
-    ) {
-      return { status: "unavailable", version: 1 };
-    }
+  };
+  const unlockedLogins = async (): Promise<readonly LoginItem[] | null> => {
     await initialized;
     if (service.getState().status !== "unlocked" && service.resumeSession !== undefined) {
       const material = await coordinator.load();
@@ -74,43 +73,137 @@ export default defineBackground(() => {
         try {
           await service.resumeSession(material);
         } catch {
-          return { status: "locked", version: 1 };
+          return null;
         } finally {
           zeroBytes(material.rootKey);
         }
       }
     }
-    if (service.getState().status !== "unlocked" || service.listItems === undefined) {
-      return { status: "locked", version: 1 };
-    }
-    let logins: readonly LoginItem[];
+    if (service.getState().status !== "unlocked" || service.listItems === undefined) return null;
     try {
-      logins = (await service.listItems()).filter(
+      return (await service.listItems()).filter(
         (item): item is LoginItem => item.type === "login",
       );
     } catch {
-      return { status: "locked", version: 1 };
+      return null;
     }
-    const decision = decideAutofill({
-      credentials: logins.map((item) => ({ id: item.id, uris: item.uris })),
-      frameUrl: request.topUrl,
-      topUrl: request.topUrl,
-      userInitiated: true,
-    });
-    if (!decision.allowed) {
-      return {
-        status: decision.reason === "AMBIGUOUS_ACCOUNT" ? "ambiguous" : "no-match",
-        version: 1,
-      };
-    }
-    const login = logins.find((item) => item.id === decision.credentialId);
-    return login === undefined
-      ? { status: "no-match", version: 1 }
-      : {
-          password: login.password,
-          status: "fill",
-          username: login.username,
+  };
+
+  browser.runtime.onMessage.addListener(
+    async (
+      message,
+      sender,
+    ): Promise<AutofillResponse | CaptureResponse | void> => {
+      const autofill = parseAutofillRequest(message);
+      if (autofill !== null) {
+        if (!trustedOrigin(autofill.topUrl, sender)) {
+          return { status: "unavailable", version: 1 };
+        }
+        const logins = await unlockedLogins();
+        if (logins === null) return { status: "locked", version: 1 };
+        const matching = logins.filter((login) =>
+          decideAutofill({
+            credentials: [{ id: login.id, uris: login.uris }],
+            frameUrl: autofill.topUrl,
+            topUrl: autofill.topUrl,
+            userInitiated: true,
+          }).allowed,
+        );
+        if (matching.length === 0) return { status: "no-match", version: 1 };
+        return {
+          credentials: matching.map((login) => ({ id: login.id, username: login.username })),
+          displayHost: new URL(autofill.topUrl).hostname,
+          status: "suggestions",
           version: 1,
         };
-  });
+      }
+
+      const selection = parseAutofillSelectRequest(message);
+      if (selection !== null) {
+        if (!trustedOrigin(selection.topUrl, sender)) {
+          return { status: "unavailable", version: 1 };
+        }
+        const logins = await unlockedLogins();
+        if (logins === null) return { status: "locked", version: 1 };
+        const login = logins.find((candidate) => candidate.id === selection.credentialId);
+        if (login === undefined) return { status: "no-match", version: 1 };
+        const decision = decideAutofill({
+          credentials: [{ id: login.id, uris: login.uris }],
+          frameUrl: selection.topUrl,
+          topUrl: selection.topUrl,
+          userInitiated: true,
+        });
+        return decision.allowed
+          ? {
+              password: login.password,
+              status: "fill",
+              username: login.username,
+              version: 1,
+            }
+          : { status: "no-match", version: 1 };
+      }
+
+      const capture =
+        parseCaptureRequest(message, CAPTURE_REQUEST_TYPE) ??
+        parseCaptureRequest(message, CAPTURE_CONFIRM_TYPE);
+      if (capture === null) return;
+      if (!trustedOrigin(capture.topUrl, sender)) {
+        return { status: "unavailable", version: 1 };
+      }
+      const logins = await unlockedLogins();
+      if (logins === null) return { status: "locked", version: 1 };
+      const decision = decideCredentialCapture({
+        captured: { password: capture.password, username: capture.username },
+        credentials: logins.map((login) => ({
+          id: login.id,
+          password: login.password,
+          passwordMatches: login.password === capture.password,
+          uris: login.uris,
+          username: login.username,
+        })),
+        frameUrl: capture.topUrl,
+        topUrl: capture.topUrl,
+      });
+      if (decision.action === "none") {
+        return {
+          status: decision.reason === "UNCHANGED" ? "unchanged" : "unsafe",
+          version: 1,
+        };
+      }
+      if (capture.type === CAPTURE_REQUEST_TYPE) {
+        return {
+          action: decision.action,
+          displayHost: decision.displayHost,
+          status: "offer",
+          version: 1,
+        };
+      }
+      if (decision.action === "save") {
+        if (service.createLogin === undefined) return { status: "unavailable", version: 1 };
+        await service.createLogin({
+          notes: "",
+          password: capture.password,
+          title: decision.displayHost,
+          uris: [decision.canonicalOrigin],
+          username: capture.username,
+        });
+      } else {
+        const existing = logins.find((login) => login.id === decision.credentialId);
+        if (existing === undefined || service.updateLogin === undefined) {
+          return { status: "unavailable", version: 1 };
+        }
+        await service.updateLogin(existing.id, existing.revisionId, {
+          ...(existing.favorite === undefined ? {} : { favorite: existing.favorite }),
+          ...(existing.folder === undefined ? {} : { folder: existing.folder }),
+          notes: existing.notes,
+          password: capture.password,
+          ...(existing.tags === undefined ? {} : { tags: existing.tags }),
+          title: existing.title,
+          uris: existing.uris,
+          username: capture.username,
+        });
+      }
+      return { action: decision.action, status: "saved", version: 1 };
+    },
+  );
 });

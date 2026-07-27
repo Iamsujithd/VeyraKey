@@ -1,6 +1,11 @@
 import {
   AUTOFILL_REQUEST_TYPE,
+  AUTOFILL_SELECT_TYPE,
   type AutofillResponse,
+  CAPTURE_CONFIRM_TYPE,
+  CAPTURE_REQUEST_TYPE,
+  type CaptureResponse,
+  captureLoginFields,
   fillLoginFields,
 } from "../src/autofill";
 
@@ -8,37 +13,158 @@ export default defineContentScript({
   allFrames: false,
   matches: ["https://*/*"],
   main() {
+    let promptHost: HTMLElement | null = null;
     let requestInProgress = false;
+
+    const closePrompt = () => {
+      promptHost?.remove();
+      promptHost = null;
+    };
+    const prompt = (
+      title: string,
+      options: readonly { readonly label: string; readonly run: () => void }[],
+    ) => {
+      closePrompt();
+      const host = document.createElement("div");
+      host.style.cssText =
+        "all:initial;position:fixed;right:18px;top:18px;z-index:2147483647;font-family:system-ui,sans-serif";
+      const root = host.attachShadow({ mode: "closed" });
+      const panel = document.createElement("div");
+      panel.style.cssText =
+        "width:300px;padding:16px;border:1px solid #6474e8;border-radius:14px;background:#111827;color:#f8fafc;box-shadow:0 18px 50px #0008";
+      const heading = document.createElement("strong");
+      heading.textContent = title;
+      heading.style.cssText = "display:block;margin-bottom:12px;font-size:15px";
+      panel.append(heading);
+      for (const option of options) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = option.label;
+        button.style.cssText =
+          "display:block;width:100%;margin-top:8px;padding:10px;border:1px solid #6474e8;border-radius:9px;background:#26316c;color:white;text-align:left;cursor:pointer";
+        button.addEventListener("click", (event) => {
+          if (!event.isTrusted) return;
+          option.run();
+        });
+        panel.append(button);
+      }
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.textContent = "Not now";
+      dismiss.style.cssText =
+        "display:block;width:100%;margin-top:8px;padding:8px;border:0;background:transparent;color:#cbd5e1;cursor:pointer";
+      dismiss.addEventListener("click", (event) => {
+        if (event.isTrusted) closePrompt();
+      });
+      panel.append(dismiss);
+      root.append(panel);
+      document.documentElement.append(host);
+      promptHost = host;
+    };
+
+    const requestSuggestions = () => {
+      if (requestInProgress) return;
+      requestInProgress = true;
+      void browser.runtime
+        .sendMessage({
+          topUrl: location.href,
+          type: AUTOFILL_REQUEST_TYPE,
+          userInitiated: true,
+          version: 1,
+        })
+        .then((response: AutofillResponse | undefined) => {
+          if (response?.status !== "suggestions") return;
+          prompt(
+            `Fill a saved login for ${response.displayHost}?`,
+            response.credentials.map((credential) => ({
+              label: credential.username || "Saved login",
+              run: () => {
+                closePrompt();
+                void browser.runtime
+                  .sendMessage({
+                    credentialId: credential.id,
+                    topUrl: location.href,
+                    type: AUTOFILL_SELECT_TYPE,
+                    userInitiated: true,
+                    version: 1,
+                  })
+                  .then((selected: AutofillResponse | undefined) => {
+                    if (selected?.status === "fill") fillLoginFields(document, selected);
+                  });
+              },
+            })),
+          );
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          requestInProgress = false;
+        });
+    };
+
+    const offerCapture = () => {
+      const captured = captureLoginFields(document);
+      if (captured === null) return;
+      void browser.runtime
+        .sendMessage({
+          ...captured,
+          topUrl: location.href,
+          type: CAPTURE_REQUEST_TYPE,
+          userInitiated: true,
+          version: 1,
+        })
+        .then((response: CaptureResponse | undefined) => {
+          if (response?.status !== "offer") return;
+          prompt(`${response.action === "save" ? "Save" : "Update"} login for ${response.displayHost}?`, [
+            {
+              label: response.action === "save" ? "Save in vault" : "Update saved login",
+              run: () => {
+                closePrompt();
+                void browser.runtime.sendMessage({
+                  ...captured,
+                  topUrl: location.href,
+                  type: CAPTURE_CONFIRM_TYPE,
+                  userInitiated: true,
+                  version: 1,
+                });
+              },
+            },
+          ]);
+        })
+        .catch(() => undefined);
+    };
+
     document.addEventListener(
       "focusin",
       (event) => {
         if (
-          requestInProgress ||
-          !event.isTrusted ||
-          window.top !== window ||
-          location.protocol !== "https:" ||
-          !(event.target instanceof HTMLInputElement) ||
-          !["email", "password", "text"].includes(event.target.type)
+          event.isTrusted &&
+          window.top === window &&
+          event.target instanceof HTMLInputElement &&
+          ["email", "password", "text"].includes(event.target.type)
         ) {
-          return;
+          requestSuggestions();
         }
-        requestInProgress = true;
-        void browser.runtime
-          .sendMessage({
-            topUrl: location.href,
-            type: AUTOFILL_REQUEST_TYPE,
-            userInitiated: true,
-            version: 1,
-          })
-          .then((response: AutofillResponse | undefined) => {
-            if (response?.status === "fill") {
-              fillLoginFields(document, response);
-            }
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            requestInProgress = false;
-          });
+      },
+      true,
+    );
+    document.addEventListener(
+      "focusout",
+      (event) => {
+        if (
+          event.isTrusted &&
+          event.target instanceof HTMLInputElement &&
+          event.target.type === "password" &&
+          event.target.value.length > 0
+        ) {
+          offerCapture();
+        }
+      },
+      true,
+    );
+    document.addEventListener(
+      "submit",
+      (event) => {
+        if (event.isTrusted) offerCapture();
       },
       true,
     );

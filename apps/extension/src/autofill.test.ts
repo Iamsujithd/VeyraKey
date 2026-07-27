@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
-import { AUTOFILL_REQUEST_TYPE, fillLoginFields, parseAutofillRequest } from "./autofill";
+import {
+  AUTOFILL_REQUEST_TYPE,
+  CAPTURE_REQUEST_TYPE,
+  captureLoginFields,
+  fillLoginFields,
+  parseAutofillRequest,
+  parseCaptureRequest,
+} from "./autofill";
 
 describe("extension automatic autofill", () => {
   it("accepts only an exact HTTPS request schema", () => {
@@ -65,5 +72,44 @@ describe("extension automatic autofill", () => {
     expect(document.querySelector<HTMLInputElement>("[autocomplete=username]")?.value).toBe(
       "existing",
     );
+  });
+
+  it("captures a completed login and rejects malformed capture messages", () => {
+    document.body.innerHTML = `
+      <form>
+        <input type="email" value="person@example.test">
+        <input type="password" value="secret">
+      </form>
+    `;
+    expect(captureLoginFields(document)).toEqual({
+      password: "secret",
+      username: "person@example.test",
+    });
+    expect(
+      parseCaptureRequest(
+        {
+          password: "secret",
+          topUrl: "https://accounts.example.test/login",
+          type: CAPTURE_REQUEST_TYPE,
+          userInitiated: true,
+          username: "person@example.test",
+          version: 1,
+        },
+        CAPTURE_REQUEST_TYPE,
+      ),
+    ).not.toBeNull();
+    expect(
+      parseCaptureRequest(
+        {
+          password: "",
+          topUrl: "https://accounts.example.test/login",
+          type: CAPTURE_REQUEST_TYPE,
+          userInitiated: true,
+          username: "person@example.test",
+          version: 1,
+        },
+        CAPTURE_REQUEST_TYPE,
+      ),
+    ).toBeNull();
   });
 });
