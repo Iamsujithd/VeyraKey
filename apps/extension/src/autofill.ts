@@ -116,8 +116,7 @@ export function parseCaptureRequest(
 export function parseUsernameObservedRequest(value: unknown): UsernameObservedRequest | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const request = value as Record<string, unknown>;
-  return Object.keys(request).sort().join(",") ===
-    "topUrl,type,userInitiated,username,version" &&
+  return Object.keys(request).sort().join(",") === "topUrl,type,userInitiated,username,version" &&
     request.type === USERNAME_OBSERVED_TYPE &&
     typeof request.username === "string" &&
     request.username.length > 0 &&
@@ -176,8 +175,7 @@ export function loginFields(document: Document): {
     password.form === null ? inputs : inputs.filter((input) => input.form === password.form);
   const username =
     formInputs.find(
-      (input) =>
-        input.value.length === 0 && ["email", "username"].includes(input.autocomplete),
+      (input) => input.value.length === 0 && ["email", "username"].includes(input.autocomplete),
     ) ??
     formInputs.find(
       (input) =>
@@ -206,14 +204,15 @@ export function captureLoginFields(document: Document): {
   readonly password: string;
   readonly username: string;
 } | null {
-  const passwords = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].filter(
+  const passwords = [
+    ...document.querySelectorAll<HTMLInputElement>('input[type="password"]'),
+  ].filter(
     (input) => input.isConnected && !input.disabled && !input.readOnly && input.value.length > 0,
   );
   const password = passwords.at(-1);
   if (password === undefined) return null;
   const inputs = [...(password.form?.querySelectorAll<HTMLInputElement>("input") ?? [])];
   const username =
-    inputs.find(isUsernameField) ??
-    inputs.find((input) => ["email", "text"].includes(input.type));
+    inputs.find(isUsernameField) ?? inputs.find((input) => ["email", "text"].includes(input.type));
   return { password: password.value, username: username?.value ?? "" };
 }

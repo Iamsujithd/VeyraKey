@@ -117,21 +117,24 @@ export default defineContentScript({
         })
         .then((response: CaptureResponse | undefined) => {
           if (response?.status !== "offer") return;
-          prompt(`${response.action === "save" ? "Save" : "Update"} login for ${response.displayHost}?`, [
-            {
-              label: response.action === "save" ? "Save in vault" : "Update saved login",
-              run: () => {
-                closePrompt();
-                void browser.runtime.sendMessage({
-                  ...captured,
-                  topUrl: location.href,
-                  type: CAPTURE_CONFIRM_TYPE,
-                  userInitiated: true,
-                  version: 1,
-                });
+          prompt(
+            `${response.action === "save" ? "Save" : "Update"} login for ${response.displayHost}?`,
+            [
+              {
+                label: response.action === "save" ? "Save in vault" : "Update saved login",
+                run: () => {
+                  closePrompt();
+                  void browser.runtime.sendMessage({
+                    ...captured,
+                    topUrl: location.href,
+                    type: CAPTURE_CONFIRM_TYPE,
+                    userInitiated: true,
+                    version: 1,
+                  });
+                },
               },
-            },
-          ]);
+            ],
+          );
         })
         .catch(() => undefined);
     };
@@ -183,7 +186,11 @@ export default defineContentScript({
     document.addEventListener(
       "pointerdown",
       (event) => {
-        if (!event.isTrusted || !(event.target instanceof Element) || !isLoginAction(event.target)) {
+        if (
+          !event.isTrusted ||
+          !(event.target instanceof Element) ||
+          !isLoginAction(event.target)
+        ) {
           return;
         }
         const active = document.activeElement;

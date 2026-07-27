@@ -86,9 +86,7 @@ export default defineBackground(() => {
     }
     if (service.getState().status !== "unlocked" || service.listItems === undefined) return null;
     try {
-      return (await service.listItems()).filter(
-        (item): item is LoginItem => item.type === "login",
-      );
+      return (await service.listItems()).filter((item): item is LoginItem => item.type === "login");
     } catch {
       return null;
     }
@@ -103,10 +101,7 @@ export default defineBackground(() => {
   };
 
   browser.runtime.onMessage.addListener(
-    async (
-      message,
-      sender,
-    ): Promise<AutofillResponse | CaptureResponse | void> => {
+    async (message, sender): Promise<AutofillResponse | CaptureResponse | undefined> => {
       const autofill = parseAutofillRequest(message);
       if (autofill !== null) {
         if (!trustedOrigin(autofill.topUrl, sender)) {
@@ -114,13 +109,14 @@ export default defineBackground(() => {
         }
         const logins = await unlockedLogins();
         if (logins === null) return { status: "locked", version: 1 };
-        const matching = logins.filter((login) =>
-          decideAutofill({
-            credentials: [{ id: login.id, uris: login.uris }],
-            frameUrl: autofill.topUrl,
-            topUrl: autofill.topUrl,
-            userInitiated: true,
-          }).allowed,
+        const matching = logins.filter(
+          (login) =>
+            decideAutofill({
+              credentials: [{ id: login.id, uris: login.uris }],
+              frameUrl: autofill.topUrl,
+              topUrl: autofill.topUrl,
+              userInitiated: true,
+            }).allowed,
         );
         if (matching.length === 0) return { status: "no-match", version: 1 };
         return {

@@ -130,7 +130,8 @@ describe("vault creation and unlock", () => {
     service.lock();
 
     const tampered = mutableHeader(parseVaultHeader(await repository.read()));
-    tampered.masterPasswordSlot.wrappedKeys.root.ciphertext = `${tampered.masterPasswordSlot.wrappedKeys.root.ciphertext.slice(0, -1)}A`;
+    const ciphertext = tampered.masterPasswordSlot.wrappedKeys.root.ciphertext;
+    tampered.masterPasswordSlot.wrappedKeys.root.ciphertext = `${ciphertext[0] === "A" ? "B" : "A"}${ciphertext.slice(1)}`;
     repository.value = tampered;
     await expect(service.unlock(MASTER_PASSWORD)).rejects.toMatchObject({
       code: "INVALID_PASSWORD_OR_CORRUPT_DATA",

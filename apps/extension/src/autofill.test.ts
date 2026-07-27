@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   AUTOFILL_REQUEST_TYPE,
   CAPTURE_REQUEST_TYPE,
-  USERNAME_OBSERVED_TYPE,
   captureLoginFields,
   fillLoginFields,
   isLoginAction,
@@ -12,6 +11,7 @@ import {
   parseAutofillRequest,
   parseCaptureRequest,
   parseUsernameObservedRequest,
+  USERNAME_OBSERVED_TYPE,
 } from "./autofill";
 
 describe("extension automatic autofill", () => {
@@ -135,5 +135,57 @@ describe("extension automatic autofill", () => {
         version: 1,
       }),
     ).not.toBeNull();
+  });
+
+  it("fails closed across malformed and hostile message variations", () => {
+    const valid = {
+      topUrl: "https://accounts.example.test/login",
+      type: AUTOFILL_REQUEST_TYPE,
+      userInitiated: true,
+      version: 1,
+    };
+    const mutations: unknown[] = [
+      null,
+      [],
+      "",
+      1,
+      { ...valid, topUrl: "http://accounts.example.test/login" },
+      { ...valid, topUrl: "javascript:alert(1)" },
+      { ...valid, topUrl: "https://user:secret@accounts.example.test/login" },
+      { ...valid, topUrl: "not a url" },
+      { ...valid, userInitiated: false },
+      { ...valid, version: 2 },
+      { ...valid, type: "__proto__" },
+      { ...valid, extra: "field" },
+    ];
+    for (let index = 0; index < 1_000; index += 1) {
+      const seed = mutations[index % mutations.length];
+      expect(parseAutofillRequest(seed)).toBeNull();
+    }
+  });
+
+  it("handles repeated dynamic login-form replacement without overwriting user input", () => {
+    for (let index = 0; index < 200; index += 1) {
+      document.body.innerHTML =
+        index % 2 === 0
+          ? `<form><input type="email"><input type="password" autocomplete="current-password"></form>`
+          : `<form><input name="account-username"><input type="password"></form>`;
+      expect(
+        fillLoginFields(document, {
+          password: `secret-${index}`,
+          username: `person-${index}@example.test`,
+        }),
+      ).toBe(true);
+      const inputs = document.querySelectorAll<HTMLInputElement>("input");
+      expect(inputs[0]?.value).toBe(`person-${index}@example.test`);
+      expect(inputs[1]?.value).toBe(`secret-${index}`);
+      expect(
+        fillLoginFields(document, {
+          password: "must-not-overwrite",
+          username: "must-not-overwrite",
+        }),
+      ).toBe(false);
+      expect(inputs[1]?.value).toBe(`secret-${index}`);
+    }
   });
 });

@@ -49,7 +49,7 @@ describe("encrypted rebuildable local search", () => {
         vaultId,
         {
           ...encrypted,
-          ciphertext: `${encrypted.ciphertext.slice(0, -1)}A`,
+          ciphertext: `${encrypted.ciphertext[0] === "A" ? "B" : "A"}${encrypted.ciphertext.slice(1)}`,
         },
         "",
       ),
