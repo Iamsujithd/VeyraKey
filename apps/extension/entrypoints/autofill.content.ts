@@ -10,8 +10,10 @@ import {
   type CaptureResponse,
   captureLoginFields,
   fillLoginFields,
+  isCredentialField,
   isLoginAction,
   isUsernameField,
+  MANUAL_AUTOFILL_REQUEST_TYPE,
   parseBiometricFillRequest,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
@@ -22,15 +24,18 @@ export default defineContentScript({
   matches: ["https://*/*"],
   main() {
     let promptHost: HTMLElement | null = null;
+    let promptAnchor: Element | null = null;
     let promptKind: "capture" | "suggestions" | null = null;
     let promptCleanup: (() => void) | null = null;
     let requestInProgress = false;
+    let queuedSuggestionAnchor: Element | null = null;
 
     const closePrompt = () => {
       promptCleanup?.();
       promptCleanup = null;
       promptHost?.remove();
       promptHost = null;
+      promptAnchor = null;
       promptKind = null;
     };
     const prompt = (
@@ -39,6 +44,7 @@ export default defineContentScript({
       subtitle: string,
       options: readonly {
         readonly detail?: string;
+        readonly icon?: string;
         readonly label: string;
         readonly run: () => void;
       }[],
@@ -48,8 +54,9 @@ export default defineContentScript({
       if (promptKind === "capture" && kind === "suggestions") return;
       closePrompt();
       const host = document.createElement("div");
+      host.dataset.zkWalletUi = "true";
       host.style.cssText =
-        "all:initial;position:fixed;z-index:2147483647;width:min(340px,calc(100vw - 24px));font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;color-scheme:light dark";
+        "all:initial;position:fixed;z-index:2147483647;width:min(300px,calc(100vw - 24px));font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;color-scheme:light dark";
       const root = host.attachShadow({ mode: "closed" });
       const styles = document.createElement("style");
       styles.textContent = `
@@ -57,9 +64,9 @@ export default defineContentScript({
         .glass {
           position: relative;
           overflow: hidden;
-          padding: 10px;
+          padding: 7px;
           border: 1px solid rgb(255 255 255 / 72%);
-          border-radius: 18px;
+          border-radius: 14px;
           color: #151517;
           background: linear-gradient(145deg, rgb(255 255 255 / 88%), rgb(242 242 247 / 76%));
           box-shadow: 0 18px 46px rgb(0 0 0 / 22%), inset 0 1px 0 rgb(255 255 255 / 86%);
@@ -78,18 +85,18 @@ export default defineContentScript({
           pointer-events: none;
         }
         .header, .option, .dismiss { position: relative; z-index: 1; }
-        .header { display: grid; gap: 2px; padding: 5px 7px 10px; }
-        .title { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+        .header { display: grid; gap: 1px; padding: 4px 7px 7px; }
+        .title { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: -.01em; }
         .subtitle { margin: 0; color: rgb(60 60 67 / 68%); font-size: 11px; line-height: 1.35; }
         .option {
           display: grid;
           width: 100%;
-          grid-template-columns: 34px 1fr 16px;
+          grid-template-columns: 30px 1fr 14px;
           align-items: center;
-          gap: 10px;
-          min-height: 52px;
+          gap: 9px;
+          min-height: 46px;
           margin: 0;
-          padding: 8px 10px;
+          padding: 6px 8px;
           border: 0;
           border-radius: 12px;
           color: inherit;
@@ -100,14 +107,14 @@ export default defineContentScript({
         .option:hover, .option:focus-visible { outline: none; background: rgb(0 122 255 / 11%); }
         .icon {
           display: grid;
-          width: 34px;
-          height: 34px;
+          width: 30px;
+          height: 30px;
           place-items: center;
           border-radius: 9px;
           color: white;
           background: linear-gradient(145deg, #5ac8fa, #0a84ff 58%, #5e5ce6);
           box-shadow: inset 0 1px rgb(255 255 255 / 45%), 0 4px 12px rgb(0 122 255 / 18%);
-          font-size: 16px;
+          font-size: 14px;
           font-weight: 700;
         }
         .copy { min-width: 0; }
@@ -117,7 +124,7 @@ export default defineContentScript({
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .label { font-size: 13px; font-weight: 650; }
+        .label { font-size: 12px; font-weight: 650; }
         .detail { margin-top: 2px; color: rgb(60 60 67 / 62%); font-size: 11px; }
         .chevron { color: rgb(60 60 67 / 42%); font-size: 18px; font-weight: 400; }
         .dismiss {
@@ -158,11 +165,14 @@ export default defineContentScript({
       `;
       const panel = document.createElement("div");
       panel.className = "glass";
+      panel.setAttribute("role", "dialog");
       const header = document.createElement("div");
       header.className = "header";
       const heading = document.createElement("strong");
       heading.className = "title";
+      heading.id = `zk-wallet-heading-${crypto.randomUUID()}`;
       heading.textContent = title;
+      panel.setAttribute("aria-labelledby", heading.id);
       const context = document.createElement("span");
       context.className = "subtitle";
       context.textContent = subtitle;
@@ -174,7 +184,7 @@ export default defineContentScript({
         button.className = "option";
         const icon = document.createElement("span");
         icon.className = "icon";
-        icon.textContent = kind === "capture" ? "✓" : "•••";
+        icon.textContent = option.icon ?? (kind === "capture" ? "✓" : "•••");
         const copy = document.createElement("span");
         copy.className = "copy";
         const label = document.createElement("span");
@@ -208,7 +218,7 @@ export default defineContentScript({
       document.documentElement.append(host);
       const place = () => {
         const rect = anchor?.isConnected ? anchor.getBoundingClientRect() : null;
-        const width = Math.min(340, window.innerWidth - 24);
+        const width = Math.min(300, window.innerWidth - 24);
         const left =
           rect === null
             ? Math.max(12, window.innerWidth - width - 18)
@@ -231,11 +241,18 @@ export default defineContentScript({
         window.removeEventListener("scroll", followAnchor, true);
       };
       promptHost = host;
+      promptAnchor = anchor;
       promptKind = kind;
     };
 
     const requestSuggestions = (anchor: Element | null) => {
-      if (requestInProgress) return;
+      if (requestInProgress) {
+        queuedSuggestionAnchor = anchor;
+        return;
+      }
+      if (promptKind === "suggestions" && promptHost !== null && promptAnchor === anchor) {
+        return;
+      }
       requestInProgress = true;
       void browser.runtime
         .sendMessage({
@@ -248,24 +265,39 @@ export default defineContentScript({
           if (response?.status === "locked") {
             prompt(
               "suggestions",
-              "Passwords Locked",
+              "Passwords",
               new URL(location.href).hostname,
               [
+                ...(response.deviceSlots.length > 0
+                  ? [
+                      {
+                        detail: "Fill without leaving Passwords unlocked",
+                        icon: "◎",
+                        label: "Use Touch ID or Biometrics",
+                        run: () => {
+                          closePrompt();
+                          void browser.runtime
+                            .sendMessage({
+                              topUrl: location.href,
+                              type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+                              userInitiated: true,
+                              version: 1,
+                            })
+                            .catch(() => undefined);
+                        },
+                      },
+                    ]
+                  : []),
                 {
-                  detail:
-                    response.deviceSlots.length > 0
-                      ? "Fill without leaving the vault unlocked"
-                      : "Open the wallet and enroll this device",
-                  label:
-                    response.deviceSlots.length > 0
-                      ? "Use Touch ID or Biometrics"
-                      : "Open Passwords",
+                  detail: "Unlock once for this login",
+                  icon: "●",
+                  label: "Enter Master Password",
                   run: () => {
                     closePrompt();
                     void browser.runtime
                       .sendMessage({
                         topUrl: location.href,
-                        type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
+                        type: MANUAL_AUTOFILL_REQUEST_TYPE,
                         userInitiated: true,
                         version: 1,
                       })
@@ -296,6 +328,7 @@ export default defineContentScript({
           const options = response.credentials.flatMap((credential) => [
             {
               detail: "Fill password",
+              icon: "•••",
               label: credential.username || "Saved login",
               run: () => selectAndFill(credential.id, false),
             },
@@ -303,6 +336,7 @@ export default defineContentScript({
               ? [
                   {
                     detail: "Fill and press Sign In",
+                    icon: "→",
                     label: `Sign in as ${credential.username || "saved login"}`,
                     run: () => selectAndFill(credential.id, true),
                   },
@@ -314,6 +348,9 @@ export default defineContentScript({
         .catch(() => undefined)
         .finally(() => {
           requestInProgress = false;
+          const queuedAnchor = queuedSuggestionAnchor;
+          queuedSuggestionAnchor = null;
+          if (isCredentialField(queuedAnchor)) requestSuggestions(queuedAnchor);
         });
     };
 
@@ -337,6 +374,7 @@ export default defineContentScript({
             [
               {
                 detail: "Encrypted in your vault",
+                icon: "✓",
                 label: response.action === "save" ? "Save Password" : "Update Password",
                 run: () => {
                   closePrompt();
@@ -379,6 +417,7 @@ export default defineContentScript({
             [
               {
                 detail: "Encrypted in your vault",
+                icon: "✓",
                 label: response.action === "save" ? "Save Password" : "Update Password",
                 run: () => {
                   closePrompt();
@@ -422,13 +461,9 @@ export default defineContentScript({
     document.addEventListener(
       "focusin",
       (event) => {
-        if (
-          event.isTrusted &&
-          window.top === window &&
-          event.target instanceof HTMLInputElement &&
-          ["email", "password", "text"].includes(event.target.type)
-        ) {
-          requestSuggestions(event.target);
+        const target = event.target instanceof Element ? event.target : null;
+        if (event.isTrusted && window.top === window && isCredentialField(target)) {
+          requestSuggestions(target);
         }
       },
       true,
@@ -453,13 +488,9 @@ export default defineContentScript({
     document.addEventListener(
       "pointerdown",
       (event) => {
-        if (
-          !event.isTrusted ||
-          !(event.target instanceof Element) ||
-          !isLoginAction(event.target)
-        ) {
-          return;
-        }
+        if (!event.isTrusted || !(event.target instanceof Element)) return;
+        if (isCredentialField(event.target)) requestSuggestions(event.target);
+        if (!isLoginAction(event.target)) return;
         const active = document.activeElement;
         if (active instanceof HTMLInputElement) rememberUsername(active);
         offerCapture(event.target);
@@ -499,6 +530,32 @@ export default defineContentScript({
       closePrompt();
       return Promise.resolve({ filled, submitted });
     });
+    let activeFieldCheckQueued = false;
+    const checkActiveField = () => {
+      activeFieldCheckQueued = false;
+      if (window.top === window && isCredentialField(document.activeElement)) {
+        requestSuggestions(document.activeElement);
+      }
+    };
+    const queueActiveFieldCheck = () => {
+      if (activeFieldCheckQueued) return;
+      activeFieldCheckQueued = true;
+      queueMicrotask(checkActiveField);
+    };
+    const observer = new MutationObserver((records) => {
+      const onlyWalletUiChanged = records.every((record) =>
+        [...record.addedNodes, ...record.removedNodes].every(
+          (node) => node instanceof HTMLElement && node.dataset.zkWalletUi === "true",
+        ),
+      );
+      if (!onlyWalletUiChanged) queueActiveFieldCheck();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener("pageshow", queueActiveFieldCheck);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") queueActiveFieldCheck();
+    });
+    queueActiveFieldCheck();
     showPendingCapture();
   },
 });

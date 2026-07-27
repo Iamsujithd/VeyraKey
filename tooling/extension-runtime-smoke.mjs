@@ -39,7 +39,7 @@ const send = (method, params = {}, sessionId) =>
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error(`${method} timed out`));
-    }, 5_000);
+    }, 15_000);
     pending.set(id, { reject, resolve, timer });
     socket.send(
       JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }),
@@ -60,8 +60,19 @@ const evaluate = async (sessionId, expression) => {
   }
   return result.result.value;
 };
+const waitForValue = async (sessionId, expression, predicate, timeout = 10_000) => {
+  const deadline = Date.now() + timeout;
+  let value;
+  do {
+    value = await evaluate(sessionId, expression);
+    if (predicate(value)) return value;
+    await pause(200);
+  } while (Date.now() < deadline);
+  return value;
+};
 
 let available = await targets();
+let startupPopupTargetId;
 let worker = available.find(
   (target) =>
     target.type === "service_worker" &&
@@ -71,6 +82,7 @@ if (worker === undefined) {
   const popupTarget = await send("Target.createTarget", {
     url: `chrome-extension://${expectedExtensionId}/popup.html`,
   });
+  startupPopupTargetId = popupTarget.targetId;
   await pause(500);
   const popupSession = await attach(popupTarget.targetId);
   await evaluate(
@@ -86,6 +98,10 @@ if (worker === undefined) {
   );
 }
 assert(worker, "Extension service worker did not load");
+if (startupPopupTargetId !== undefined) {
+  await send("Target.closeTarget", { targetId: startupPopupTargetId }).catch(() => undefined);
+  await pause(300);
+}
 const extensionId = new URL(worker.url).host;
 const page = available.find(
   (target) => target.type === "page" && !target.url.startsWith("chrome-extension://"),
@@ -110,9 +126,72 @@ await send("Runtime.enable", {}, workerSession);
 await send("Log.enable", {}, workerSession);
 const tabId = await evaluate(
   workerSession,
-  "chrome.tabs.query({active:true,currentWindow:true}).then(([tab])=>tab.id)",
+  "chrome.tabs.query({}).then(tabs => (tabs.length === 1 ? tabs[0]?.id : tabs.find(tab => tab.active)?.id) ?? null)",
 );
 assert.equal(typeof tabId, "number");
+const contentScriptReady = await waitForValue(
+  workerSession,
+  `chrome.tabs.sendMessage(${tabId}, {
+    password: "readiness-only",
+    submit: false,
+    topUrl: ${JSON.stringify(fixtureUrl)},
+    type: "zk-wallet.biometric-fill.v1",
+    username: "",
+    version: 1
+  }).then(response => response?.filled === false, () => false)`,
+  (value) => value === true,
+);
+assert.equal(contentScriptReady, true, "HTTPS content script did not become ready");
+await evaluate(
+  activePageSession,
+  `(() => {
+    const form = document.createElement("form");
+    form.id = "zk-runtime-dynamic-login";
+    const username = document.createElement("input");
+    username.type = "email";
+    username.autocomplete = "username";
+    form.append(username);
+    document.body.append(form);
+    username.focus();
+  })()`,
+);
+const dynamicPromptCount = await waitForValue(
+  activePageSession,
+  `[...document.documentElement.children].filter(el=>el instanceof HTMLDivElement&&el.style.zIndex==="2147483647").length`,
+  (value) => value === 1,
+);
+assert.equal(dynamicPromptCount, 1, "Dynamic focused login field did not open Passwords");
+await evaluate(
+  activePageSession,
+  `(() => {
+    document.querySelector("#zk-runtime-dynamic-login")?.remove();
+    const form = document.createElement("form");
+    form.id = "zk-runtime-replaced-login";
+    const password = document.createElement("input");
+    password.type = "password";
+    password.autocomplete = "current-password";
+    form.append(password);
+    document.body.append(form);
+    password.focus();
+  })()`,
+);
+const replacedPromptCount = await waitForValue(
+  activePageSession,
+  `[...document.documentElement.children].filter(el=>el instanceof HTMLDivElement&&el.style.zIndex==="2147483647").length`,
+  (value) => value === 1,
+);
+assert.equal(replacedPromptCount, 1, "Replaced password step did not refresh Passwords");
+await evaluate(
+  activePageSession,
+  `(() => {
+    document.querySelector("#zk-runtime-replaced-login")?.remove();
+    for (const element of [...document.documentElement.children]) {
+      if (element instanceof HTMLDivElement && element.style.zIndex === "2147483647") {
+        element.remove();
+      }
+    }
+  })()`,
+);
 const storageKey = `zk-wallet.pending-capture.v1.${tabId}`;
 const pendingCapture = {
   action: "save",
@@ -196,6 +275,8 @@ console.log(
     passed: [
       "extension loaded",
       "HTTPS content script injected",
+      "dynamic username field opened Passwords",
+      "replaced password step refreshed Passwords",
       "pending credential survived service-worker termination",
       "save prompt restored after navigation",
       "extension origin reported WebAuthn PRF capability",

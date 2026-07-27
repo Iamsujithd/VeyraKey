@@ -10,14 +10,17 @@ import {
   CAPTURE_REQUEST_TYPE,
   captureLoginFields,
   fillLoginFields,
+  isCredentialField,
   isLoginAction,
   isUsernameField,
+  MANUAL_AUTOFILL_REQUEST_TYPE,
   parseAutofillRequest,
   parseBiometricAutofillRequest,
   parseBiometricFillRequest,
   parseCaptureActionRequest,
   parseCapturePendingRequest,
   parseCaptureRequest,
+  parseManualAutofillRequest,
   parseUsernameObservedRequest,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
@@ -124,6 +127,23 @@ describe("extension automatic autofill", () => {
         version: 1,
       }),
     ).toBeNull();
+    expect(
+      parseManualAutofillRequest({
+        topUrl: "https://accounts.example.test/login",
+        type: MANUAL_AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }),
+    ).not.toBeNull();
+    expect(
+      parseManualAutofillRequest({
+        extra: "must-fail",
+        topUrl: "https://accounts.example.test/login",
+        type: MANUAL_AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }),
+    ).toBeNull();
   });
 
   it("does not overwrite fields or fill password-creation forms", () => {
@@ -186,6 +206,7 @@ describe("extension automatic autofill", () => {
     const username = document.querySelector<HTMLInputElement>("input");
     const button = document.querySelector<HTMLButtonElement>("button");
     expect(username === null ? false : isUsernameField(username)).toBe(true);
+    expect(username === null ? false : isCredentialField(username)).toBe(true);
     expect(button === null ? false : isLoginAction(button)).toBe(true);
     expect(
       parseUsernameObservedRequest({

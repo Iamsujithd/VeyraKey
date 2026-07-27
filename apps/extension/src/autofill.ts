@@ -1,6 +1,7 @@
 export const AUTOFILL_REQUEST_TYPE = "zk-wallet.autofill-request.v1" as const;
 export const AUTOFILL_SELECT_TYPE = "zk-wallet.autofill-select.v1" as const;
 export const BIOMETRIC_AUTOFILL_REQUEST_TYPE = "zk-wallet.biometric-autofill-request.v1" as const;
+export const MANUAL_AUTOFILL_REQUEST_TYPE = "zk-wallet.manual-autofill-request.v1" as const;
 export const BIOMETRIC_FILL_TYPE = "zk-wallet.biometric-fill.v1" as const;
 export const CAPTURE_REQUEST_TYPE = "zk-wallet.capture-request.v1" as const;
 export const CAPTURE_CONFIRM_TYPE = "zk-wallet.capture-confirm.v1" as const;
@@ -25,6 +26,10 @@ export interface AutofillSelectRequest extends OriginRequest {
 
 export interface BiometricAutofillRequest extends OriginRequest {
   readonly type: typeof BIOMETRIC_AUTOFILL_REQUEST_TYPE;
+}
+
+export interface ManualAutofillRequest extends OriginRequest {
+  readonly type: typeof MANUAL_AUTOFILL_REQUEST_TYPE;
 }
 
 export interface BiometricFillRequest {
@@ -65,7 +70,7 @@ export type AutofillResponse =
       readonly status: "locked";
       readonly version: 1;
     }
-  | { readonly status: "opening-biometric"; readonly version: 1 }
+  | { readonly status: "opening-authentication"; readonly version: 1 }
   | {
       readonly credentials: readonly { readonly id: string; readonly username: string }[];
       readonly displayHost: string;
@@ -135,6 +140,16 @@ export function parseBiometricAutofillRequest(value: unknown): BiometricAutofill
     request.type === BIOMETRIC_AUTOFILL_REQUEST_TYPE &&
     validOriginRequest(request)
     ? (request as unknown as BiometricAutofillRequest)
+    : null;
+}
+
+export function parseManualAutofillRequest(value: unknown): ManualAutofillRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") === "topUrl,type,userInitiated,version" &&
+    request.type === MANUAL_AUTOFILL_REQUEST_TYPE &&
+    validOriginRequest(request)
+    ? (request as unknown as ManualAutofillRequest)
     : null;
 }
 
@@ -232,6 +247,17 @@ export function isUsernameField(input: HTMLInputElement): boolean {
     input.autocomplete === "email" ||
     input.type === "email" ||
     /(?:^|[^a-z])(email|e-mail|user(?:name)?|login)(?:[^a-z]|$)/u.test(hint)
+  );
+}
+
+export function isCredentialField(element: Element | null): element is HTMLInputElement {
+  return (
+    element instanceof HTMLInputElement &&
+    element.isConnected &&
+    !element.disabled &&
+    !element.readOnly &&
+    element.getAttribute("aria-hidden") !== "true" &&
+    ["email", "password", "text"].includes(element.type)
   );
 }
 

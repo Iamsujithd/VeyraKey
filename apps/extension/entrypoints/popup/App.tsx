@@ -253,39 +253,47 @@ function createLocalVaultClient(): VaultClient {
   return withExtensionSession(withExtensionGoogleDriveSync(client, crypto), coordinator);
 }
 
-interface BiometricAutofillTarget {
+interface AuthenticatedAutofillTarget {
+  readonly method: "biometric" | "password";
   readonly tabId: number;
   readonly topUrl: string;
 }
 
-export function biometricAutofillTarget(search: string): BiometricAutofillTarget | null {
+export function authenticatedAutofillTarget(search: string): AuthenticatedAutofillTarget | null {
   const parameters = new URLSearchParams(search);
-  if (parameters.get("mode") !== "biometric-autofill") return null;
+  const mode = parameters.get("mode");
+  if (!["biometric-autofill", "manual-autofill"].includes(mode ?? "")) return null;
   const tabId = Number(parameters.get("tabId"));
   const topUrl = parameters.get("topUrl");
   if (!Number.isSafeInteger(tabId) || tabId < 0 || topUrl === null) return null;
   try {
     const parsed = new URL(topUrl);
     return parsed.protocol === "https:" && parsed.username === "" && parsed.password === ""
-      ? { tabId, topUrl: parsed.href }
+      ? {
+          method: mode === "biometric-autofill" ? "biometric" : "password",
+          tabId,
+          topUrl: parsed.href,
+        }
       : null;
   } catch {
     return null;
   }
 }
 
-function BiometricAutofill({
+function AuthenticatedAutofill({
   client,
   target,
 }: {
   readonly client: VaultClient;
-  readonly target: BiometricAutofillTarget;
+  readonly target: AuthenticatedAutofillTarget;
 }) {
   const [state, setState] = useState<VaultPublicState | { readonly status: "preparing" }>({
     status: "preparing",
   });
   const [status, setStatus] = useState("Preparing encrypted vault…");
   const [busy, setBusy] = useState(false);
+  const [manualPassword, setManualPassword] = useState("");
+  const [useMasterPassword, setUseMasterPassword] = useState(target.method === "password");
   const [submitAfterFill, setSubmitAfterFill] = useState(true);
   const [matches, setMatches] = useState<readonly LoginItem[]>([]);
   const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
@@ -303,7 +311,7 @@ function BiometricAutofill({
         setStatus(
           nextState.status === "locked"
             ? "Confirm your identity to release one matching password."
-            : "Biometric AutoFill is ready.",
+            : "Password AutoFill is ready.",
         );
       })
       .catch(() => {
@@ -318,6 +326,7 @@ function BiometricAutofill({
 
   const relock = () => {
     client.lock();
+    setManualPassword("");
     setMatches([]);
   };
 
@@ -351,38 +360,64 @@ function BiometricAutofill({
     }
   };
 
-  const authenticate = async () => {
+  const findMatches = async () => {
+    if (client.listItems === undefined) {
+      throw new Error("Encrypted login access is unavailable");
+    }
+    return (await client.listItems()).filter(
+      (item): item is LoginItem =>
+        item.type === "login" &&
+        decideAutofill({
+          credentials: [{ id: item.id, uris: item.uris }],
+          frameUrl: target.topUrl,
+          topUrl: target.topUrl,
+          userInitiated: true,
+        }).allowed,
+    );
+  };
+
+  const handleMatches = async (logins: readonly LoginItem[]) => {
+    if (logins.length === 0) {
+      setStatus("No exact-origin password is saved for this page.");
+      relock();
+    } else if (logins.length === 1) {
+      const login = logins[0];
+      if (login !== undefined) await fill(login);
+    } else {
+      setMatches(logins);
+      setStatus("Choose the account to fill.");
+    }
+  };
+
+  const authenticateWithDevice = async () => {
     const slot = slots[0];
     if (slot === undefined || client.listItems === undefined) {
       setStatus("Enroll this device from Passwords settings before using biometric AutoFill.");
+      setUseMasterPassword(true);
       return;
     }
     setBusy(true);
     setStatus("Waiting for Touch ID, Windows Hello, or your security key…");
     try {
       await client.unlockWithDevice(slot.id);
-      const logins = (await client.listItems()).filter(
-        (item): item is LoginItem =>
-          item.type === "login" &&
-          decideAutofill({
-            credentials: [{ id: item.id, uris: item.uris }],
-            frameUrl: target.topUrl,
-            topUrl: target.topUrl,
-            userInitiated: true,
-          }).allowed,
-      );
-      if (logins.length === 0) {
-        setStatus("No exact-origin password is saved for this page.");
-        relock();
-      } else if (logins.length === 1) {
-        const login = logins[0];
-        if (login !== undefined) await fill(login);
-      } else {
-        setMatches(logins);
-        setStatus("Choose the account to fill.");
-      }
+      await handleMatches(await findMatches());
     } catch {
       setStatus("Biometric verification was canceled or is unavailable on this device.");
+      relock();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const authenticateWithPassword = async (password: string) => {
+    setManualPassword("");
+    setBusy(true);
+    setStatus("Unlocking the encrypted vault on this device…");
+    try {
+      await client.unlock(password);
+      await handleMatches(await findMatches());
+    } catch {
+      setStatus("Unable to unlock. Check the master password.");
       relock();
     } finally {
       setBusy(false);
@@ -396,7 +431,7 @@ function BiometricAutofill({
           ◎
         </span>
         <p className="eyebrow">Passwords</p>
-        <h1 id="biometric-title">Biometric AutoFill</h1>
+        <h1 id="biometric-title">Unlock to AutoFill</h1>
         <p className="biometric-host">{new URL(target.topUrl).hostname}</p>
         <p className="biometric-copy">
           Only the exact matching password is released. The vault relocks immediately after filling.
@@ -410,15 +445,68 @@ function BiometricAutofill({
           />
           <span>Fill and press Sign In</span>
         </label>
-        {matches.length === 0 ? (
-          <button
-            className="biometric-action"
-            disabled={busy || state.status === "preparing"}
-            onClick={() => void authenticate()}
-            type="button"
+        {matches.length === 0 && useMasterPassword ? (
+          <form
+            className="biometric-password-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const password = manualPassword;
+              if (password.length > 0) void authenticateWithPassword(password);
+            }}
           >
-            {busy ? "Verifying…" : "Use Touch ID or Biometrics"}
-          </button>
+            <label htmlFor="autofill-master-password">Master password</label>
+            <input
+              autoComplete="current-password"
+              disabled={busy || state.status === "preparing"}
+              id="autofill-master-password"
+              onChange={(event) => setManualPassword(event.target.value)}
+              type="password"
+              value={manualPassword}
+            />
+            <button
+              className="biometric-action"
+              disabled={busy || state.status === "preparing" || manualPassword.length === 0}
+              type="submit"
+            >
+              {busy ? "Unlocking…" : "Unlock and Fill"}
+            </button>
+            {slots.length > 0 ? (
+              <button
+                className="biometric-switch"
+                disabled={busy}
+                onClick={() => {
+                  setManualPassword("");
+                  setUseMasterPassword(false);
+                  setStatus("Confirm your identity to release one matching password.");
+                }}
+                type="button"
+              >
+                Use Touch ID or Biometrics
+              </button>
+            ) : null}
+          </form>
+        ) : matches.length === 0 ? (
+          <div className="biometric-actions">
+            <button
+              className="biometric-action"
+              disabled={busy || state.status === "preparing"}
+              onClick={() => void authenticateWithDevice()}
+              type="button"
+            >
+              {busy ? "Verifying…" : "Use Touch ID or Biometrics"}
+            </button>
+            <button
+              className="biometric-switch"
+              disabled={busy}
+              onClick={() => {
+                setUseMasterPassword(true);
+                setStatus("Enter your master password in this protected extension window.");
+              }}
+              type="button"
+            >
+              Enter Master Password
+            </button>
+          </div>
         ) : (
           <fieldset className="biometric-accounts">
             <legend>Matching accounts</legend>
@@ -450,11 +538,11 @@ function BiometricAutofill({
 
 export function App({ client }: AppProps) {
   const [vaultClient] = useState(() => client ?? createLocalVaultClient());
-  const [biometricTarget] = useState(() => biometricAutofillTarget(globalThis.location.search));
+  const [autofillTarget] = useState(() => authenticatedAutofillTarget(globalThis.location.search));
   const [fillStatus, setFillStatus] = useState("");
   const [capture, setCapture] = useState<CaptureProposal | null>(null);
-  if (biometricTarget !== null) {
-    return <BiometricAutofill client={vaultClient} target={biometricTarget} />;
+  if (autofillTarget !== null) {
+    return <AuthenticatedAutofill client={vaultClient} target={autofillTarget} />;
   }
   return (
     <>

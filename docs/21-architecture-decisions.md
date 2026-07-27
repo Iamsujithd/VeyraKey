@@ -219,6 +219,14 @@ Content from external sources was rephrased for compliance with licensing restri
 - **Consequences:** Local vault operation remains independent of Google. Disconnect or page restart removes the memory token. Google observes account, traffic, size, and timing metadata. The fixed recovery archive is a convenience backup, not sync truth; immutable revisions remain canonical. OAuth consent and real-account behavior require the user’s Google Cloud project.
 - **Rejected:** OAuth tokens in localStorage/IndexedDB, broad Drive scope, application-server token exchange or vault relay, plaintext Drive exports, treating the mutable recovery archive as canonical history, silent background consent, and server recovery escrow.
 
+## ADR-035: Field-level authenticated AutoFill
+
+- **Date:** 2026-07-27.
+- **Status:** Accepted and implemented for extension version 0.6.0.
+- **Decision:** A compact field-anchored Passwords chooser is triggered by trusted focus and pointer events and is refreshed for page restoration, visibility changes, autofocus, and dynamically replaced login steps. A locked vault offers WebAuthn PRF when enrolled and always offers a master-password fallback. The master password is collected only in a protected extension-origin window, never in content-script or page DOM. Both methods create a transient local root session, select only exact-HTTPS-origin logins, deliver one explicitly selected credential to the originating tab, and relock immediately. Fill-and-submit remains an explicit choice and requires one unambiguous login submitter.
+- **Security boundary:** Background handlers strictly parse exact message schemas, validate the sender tab against the requested top-level HTTPS origin, and bind the extension sheet to that tab and URL. The receiving content script accepts credential delivery only from its own extension without a sender tab and rechecks the exact origin. Cross-origin frames, opaque/HTTP origins, overwritten fields, password-creation forms, and ambiguous submit controls fail closed.
+- **Rejected:** Master-password fields inside the visited page, keyboard interception, silent filling, automatic submission, related-domain guessing, keeping the manager unlocked after transient AutoFill, copying Apple branding or proprietary artwork, and claiming Chrome can render Safari's system-owned Password AutoFill UI.
+
 ## ADR-025: Task 5 provider-neutral deterministic sync core
 
 - **Date:** 2026-07-25.

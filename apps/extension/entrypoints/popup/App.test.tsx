@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VaultClient } from "@zk-wallet/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, biometricAutofillTarget } from "./App";
+import { App, authenticatedAutofillTarget } from "./App";
 
 function client(): VaultClient {
   const locked = {
@@ -46,19 +46,24 @@ describe("extension popup", () => {
     expect(screen.getByText("Browser extension")).toBeInTheDocument();
   });
 
-  it("accepts only a strict HTTPS biometric autofill target", () => {
+  it("accepts only strict HTTPS authenticated autofill targets", () => {
     expect(
-      biometricAutofillTarget(
+      authenticatedAutofillTarget(
         "?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
       ),
-    ).toEqual({ tabId: 7, topUrl: "https://example.test/login" });
+    ).toEqual({ method: "biometric", tabId: 7, topUrl: "https://example.test/login" });
     expect(
-      biometricAutofillTarget(
+      authenticatedAutofillTarget(
+        "?mode=manual-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      ),
+    ).toEqual({ method: "password", tabId: 7, topUrl: "https://example.test/login" });
+    expect(
+      authenticatedAutofillTarget(
         "?mode=biometric-autofill&tabId=7&topUrl=http%3A%2F%2Fexample.test%2Flogin",
       ),
     ).toBeNull();
     expect(
-      biometricAutofillTarget(
+      authenticatedAutofillTarget(
         "?mode=biometric-autofill&tabId=-1&topUrl=https%3A%2F%2Fexample.test%2Flogin",
       ),
     ).toBeNull();
@@ -129,6 +134,109 @@ describe("extension popup", () => {
     );
     expect(lock).toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
+  });
+
+  it("fills after master-password entry in the protected extension page and relocks", async () => {
+    const locked = {
+      deviceUnlock: { available: false, slots: [] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlocked = {
+      deviceUnlock: { available: false, slots: [] },
+      itemCount: 1,
+      recovery: { status: "verified" },
+      status: "unlocked",
+      unlockedCompartments: [],
+      vaultId: "vault-id",
+    } as const;
+    const unlock = vi.fn(async () => unlocked);
+    const lock = vi.fn(() => locked);
+    const sendMessage = vi.fn(async () => ({ filled: true, submitted: true }));
+    const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: async () => [
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "login-id",
+          notes: "",
+          password: "synthetic-secret",
+          revisionId: "revision-id",
+          title: "Example",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://example.test"],
+          username: "person@example.test",
+        },
+      ],
+      lock,
+      unlock,
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?mode=manual-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+    const password = await screen.findByLabelText("Master password");
+    fireEvent.change(password, { target: { value: "correct master password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock and Fill" }));
+
+    await waitFor(() => expect(unlock).toHaveBeenCalledWith("correct master password"));
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(7, {
+        password: "synthetic-secret",
+        submit: true,
+        topUrl: "https://example.test/login",
+        type: "zk-wallet.biometric-fill.v1",
+        username: "person@example.test",
+        version: 1,
+      }),
+    );
+    expect(lock).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+  });
+
+  it("clears a rejected master password without delivering a credential", async () => {
+    const locked = {
+      deviceUnlock: { available: false, slots: [] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlock = vi.fn(async () => {
+      throw new Error("synthetic wrong password");
+    });
+    const lock = vi.fn(() => locked);
+    const sendMessage = vi.fn();
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: vi.fn(),
+      lock,
+      unlock,
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?mode=manual-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+    const password = await screen.findByLabelText<HTMLInputElement>("Master password");
+    fireEvent.change(password, { target: { value: "wrong master password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock and Fill" }));
+
+    expect(await screen.findByText("Unable to unlock. Check the master password.")).toBeVisible();
+    expect(password.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(lock).toHaveBeenCalled();
   });
 
   it("shows an exact-origin confirmation before saving a captured login", async () => {

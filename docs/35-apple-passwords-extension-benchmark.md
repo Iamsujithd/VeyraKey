@@ -78,6 +78,8 @@ principles as follows:
 | Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
 | Touch ID, Windows Hello, or security-key vault unlock | Implemented through capability-gated WebAuthn PRF |
 | Biometric exact-origin AutoFill while the manager stays locked | Implemented as a transient session that relocks immediately after filling |
+| Master-password AutoFill while the manager stays locked | Implemented in a protected extension-origin sheet that clears the submitted password and relocks after filling |
+| Autofocused and replaced multi-step login fields | Implemented through focus, pointer, page-restore, visibility, and DOM-replacement observation |
 | Fill and submit | Implemented as a separate explicit action; ambiguous forms fail closed |
 | Native Apple Passwords sheet | Not available to Chrome; the extension invokes the browser/platform WebAuthn sheet |
 | Native passkey provider integration | Future work |
@@ -91,6 +93,8 @@ principles as follows:
 - No credential is filled or saved without a direct user action.
 - Suggestions are scoped to the normalized site origin and matching login records.
 - Password text is never inserted into page HTML, URLs, logs, analytics, or error messages.
+- The master password is entered only on the extension origin, never in page-owned or
+  content-script DOM where the website could observe keyboard events.
 - In-page UI remains usable on responsive layouts, single-page applications, shadow-DOM
   forms, and dynamically inserted login steps where browser permissions allow access.
 - Extension reload, navigation, and service-worker suspension do not silently lose a

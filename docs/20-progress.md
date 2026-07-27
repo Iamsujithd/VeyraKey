@@ -302,8 +302,8 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 ### Tasks 8–10 — Safe browser use, secret tools, and organization
 
 - **Status:** Complete.
-- **Scope delivered:** Exact HTTPS-origin and punycode-aware matching; explicit `activeTab`/`scripting` main-frame fill; standard/SPA input events; conservative HTTP/opaque/cross-frame refusal; confirmed save/update capture; exact-origin TOTP fill; strict otpauth parsing and RFC vectors; capability-gated local QR import; unbiased CSPRNG password and 2048-token passphrase generation; best-effort clipboard clearing that preserves newer clipboard content; encrypted TOTP, tag, folder, and favorite fields; local search UI; and a root-derived authenticated rebuildable search index in IndexedDB version 5.
-- **Validation:** `pnpm check` passes with 27 test files and 139 tests. The suites cover lookalikes, IDNs, frames, ambiguity, form events, capture decisions, explicit confirmation, generator rejection sampling, RFC TOTP vectors, QR payloads, clipboard replacement races, encrypted item plaintext inspection, encrypted search/tamper handling, persistence migration, manifests, and production builds.
+- **Scope delivered:** Exact HTTPS-origin and punycode-aware matching; contextual field-anchored suggestions; protected extension-origin biometric or master-password AutoFill with immediate relock; autofocus, pointer, page-restore, visibility, and dynamic-step detection; explicit fill-and-submit with ambiguous-form refusal; confirmed save/update capture; exact-origin TOTP fill; strict otpauth parsing and RFC vectors; capability-gated local QR import; unbiased CSPRNG password and 2048-token passphrase generation; best-effort clipboard clearing that preserves newer clipboard content; encrypted TOTP, tag, folder, and favorite fields; local search UI; and a root-derived authenticated rebuildable search index in IndexedDB version 5.
+- **Validation:** The current whole-repository check passes with 35 test files and 181 tests. The suites cover lookalikes, IDNs, frames, ambiguity, form events, manual/biometric exact-origin handoff, rejected-secret clearing, capture decisions, explicit confirmation, generator rejection sampling, RFC TOTP vectors, QR payloads, clipboard replacement races, encrypted item plaintext inspection, encrypted search/tamper handling, persistence migration, manifests, and production builds.
 - **Limitations:** Broad related-domain matching, arbitrary shadow DOM, unusual multistep login capture, automatic background capture, and camera QR fallback without native `BarcodeDetector` remain intentionally unsupported. Real hostile-site Chrome/Firefox automation remains a release gate.
 
 ### Tasks 11–12 — Portable encrypted data and password health
@@ -324,13 +324,14 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 
 - **Status:** In review.
 - **Local deliverables:** Static web and Worker dry-run outputs; reproducible Chrome and Firefox MV3 ZIPs; validated SBOM; release/security documentation; smoke/demo script; migration and rollback plan; and artifact checks integrated into CI.
-- **Artifact evidence:** Chrome ZIP SHA-256 `dcfd72fe51cb42a7e5734db51e9a143fc82a8a330495a53560ac310c6030b5a9`; Firefox ZIP SHA-256 `bc6b5ca7ad14b780e325a50ca818bb949144f05dcdd1ac01910021dd761b9f36`; lockfile SHA-256 `910e7b1aaffe0b201afb55772adf07987d0d303985647562a02d2bcddeb2654e`.
-- **Latest validation:** `CI=true pnpm check` passes with 31 test files and 156 tests, all production targets, and artifact verification.
+- **Artifact evidence:** Version 0.6.0 Chrome ZIP SHA-256 `9674ea5494461e67f109561c89cf78b481af5f3f7bbe5daf210adfd35e35c5e3`; Firefox ZIP SHA-256 `4088def9da5188581285c86a1559ac8e523456b856063e92d8f911d8ba316452`; lockfile SHA-256 `910e7b1aaffe0b201afb55772adf07987d0d303985647562a02d2bcddeb2654e`.
+- **Latest validation:** `CI=true pnpm check` passes with 35 test files and 181 tests, all production targets, and artifact verification. An isolated real-Chromium lifecycle run verifies extension loading, content-script readiness, dynamic username detection, replaced password-step detection, pending-save survival across service-worker termination/navigation, and extension-origin WebAuthn PRF capability. The same unpacked build is reloaded and enabled as version 0.6.0 in regular Chrome.
 - **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
   is registered for localhost and its configured test account. The pinned Chrome extension ID is
   `lnabfclakgdolgcfallnnhkeeoclfkcf`; its
   `https://lnabfclakgdolgcfallnnhkeeoclfkcf.chromiumapp.org/oauth/google` redirect is registered
   on the Google OAuth client. Microsoft OAuth is blocked until the current account has an Entra
-  tenant/directory. The real installed-extension Chrome/Firefox/PRF matrix has not run, and neither
-  extension ZIP is store-signed. Task 14 must not be marked complete until the applicable evidence
-  is attached.
+  tenant/directory. A physical Touch ID/Windows Hello/security-key ceremony and the Firefox matrix
+  remain external manual gates; Chrome for Testing cannot use macOS Touch ID without Google's
+  keychain entitlement. Neither extension ZIP is store-signed. Task 14 must not be marked complete
+  until the applicable evidence is attached.

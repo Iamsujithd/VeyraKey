@@ -18,6 +18,7 @@ import {
   parseCaptureActionRequest,
   parseCapturePendingRequest,
   parseCaptureRequest,
+  parseManualAutofillRequest,
   parseUsernameObservedRequest,
 } from "../src/autofill";
 import { ExtensionSessionCoordinator } from "../src/session";
@@ -154,13 +155,18 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
     async (message, sender): Promise<AutofillResponse | CaptureResponse | undefined> => {
       const biometricAutofill = parseBiometricAutofillRequest(message);
-      if (biometricAutofill !== null) {
-        if (!trustedOrigin(biometricAutofill.topUrl, sender) || sender.tab?.id === undefined) {
+      const manualAutofill = parseManualAutofillRequest(message);
+      const authenticatedAutofill = biometricAutofill ?? manualAutofill;
+      if (authenticatedAutofill !== null) {
+        if (!trustedOrigin(authenticatedAutofill.topUrl, sender) || sender.tab?.id === undefined) {
           return { status: "unavailable", version: 1 };
         }
-        const targetUrl = new URL(biometricAutofill.topUrl);
+        const targetUrl = new URL(authenticatedAutofill.topUrl);
         const popupUrl = new URL(browser.runtime.getURL("/popup.html"));
-        popupUrl.searchParams.set("mode", "biometric-autofill");
+        popupUrl.searchParams.set(
+          "mode",
+          biometricAutofill === null ? "manual-autofill" : "biometric-autofill",
+        );
         popupUrl.searchParams.set("tabId", String(sender.tab.id));
         popupUrl.searchParams.set("topUrl", targetUrl.href);
         await browser.windows.create({
@@ -170,7 +176,7 @@ export default defineBackground(() => {
           url: popupUrl.href,
           width: 430,
         });
-        return { status: "opening-biometric", version: 1 };
+        return { status: "opening-authentication", version: 1 };
       }
 
       const autofill = parseAutofillRequest(message);
