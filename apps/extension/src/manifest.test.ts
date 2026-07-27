@@ -3,7 +3,7 @@ import { extensionManifest, manifestForBrowser } from "./manifest";
 
 describe("extension manifest", () => {
   it("identifies the WebAssembly-enabled build", () => {
-    expect(extensionManifest.version).toBe("0.2.0");
+    expect(extensionManifest.version).toBe("0.2.1");
   });
 
   it("requests only browser tools, OAuth identity, storage, and Google API access", () => {

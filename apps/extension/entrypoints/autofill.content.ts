@@ -7,6 +7,9 @@ import {
   type CaptureResponse,
   captureLoginFields,
   fillLoginFields,
+  isLoginAction,
+  isUsernameField,
+  USERNAME_OBSERVED_TYPE,
 } from "../src/autofill";
 
 export default defineContentScript({
@@ -132,6 +135,18 @@ export default defineContentScript({
         })
         .catch(() => undefined);
     };
+    const rememberUsername = (input: HTMLInputElement) => {
+      if (!isUsernameField(input) || input.value.length === 0) return;
+      void browser.runtime
+        .sendMessage({
+          topUrl: location.href,
+          type: USERNAME_OBSERVED_TYPE,
+          userInitiated: true,
+          username: input.value,
+          version: 1,
+        })
+        .catch(() => undefined);
+    };
 
     document.addEventListener(
       "focusin",
@@ -150,14 +165,30 @@ export default defineContentScript({
     document.addEventListener(
       "focusout",
       (event) => {
-        if (
-          event.isTrusted &&
-          event.target instanceof HTMLInputElement &&
-          event.target.type === "password" &&
-          event.target.value.length > 0
-        ) {
-          offerCapture();
+        if (!event.isTrusted || !(event.target instanceof HTMLInputElement)) return;
+        rememberUsername(event.target);
+        if (event.target.type === "password" && event.target.value.length > 0) offerCapture();
+      },
+      true,
+    );
+    document.addEventListener(
+      "change",
+      (event) => {
+        if (event.isTrusted && event.target instanceof HTMLInputElement) {
+          rememberUsername(event.target);
         }
+      },
+      true,
+    );
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!event.isTrusted || !(event.target instanceof Element) || !isLoginAction(event.target)) {
+          return;
+        }
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement) rememberUsername(active);
+        offerCapture();
       },
       true,
     );

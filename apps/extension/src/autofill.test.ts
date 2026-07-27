@@ -4,10 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   AUTOFILL_REQUEST_TYPE,
   CAPTURE_REQUEST_TYPE,
+  USERNAME_OBSERVED_TYPE,
   captureLoginFields,
   fillLoginFields,
+  isLoginAction,
+  isUsernameField,
   parseAutofillRequest,
   parseCaptureRequest,
+  parseUsernameObservedRequest,
 } from "./autofill";
 
 describe("extension automatic autofill", () => {
@@ -111,5 +115,25 @@ describe("extension automatic autofill", () => {
         CAPTURE_REQUEST_TYPE,
       ),
     ).toBeNull();
+  });
+
+  it("recognizes multi-step username fields and sign-in actions", () => {
+    document.body.innerHTML = `
+      <input id="account-login" type="text" value="person@example.test">
+      <button type="button">Sign in</button>
+    `;
+    const username = document.querySelector<HTMLInputElement>("input");
+    const button = document.querySelector<HTMLButtonElement>("button");
+    expect(username === null ? false : isUsernameField(username)).toBe(true);
+    expect(button === null ? false : isLoginAction(button)).toBe(true);
+    expect(
+      parseUsernameObservedRequest({
+        topUrl: "https://accounts.example.test/username",
+        type: USERNAME_OBSERVED_TYPE,
+        userInitiated: true,
+        username: "person@example.test",
+        version: 1,
+      }),
+    ).not.toBeNull();
   });
 });

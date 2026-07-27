@@ -2,6 +2,7 @@ export const AUTOFILL_REQUEST_TYPE = "zk-wallet.autofill-request.v1" as const;
 export const AUTOFILL_SELECT_TYPE = "zk-wallet.autofill-select.v1" as const;
 export const CAPTURE_REQUEST_TYPE = "zk-wallet.capture-request.v1" as const;
 export const CAPTURE_CONFIRM_TYPE = "zk-wallet.capture-confirm.v1" as const;
+export const USERNAME_OBSERVED_TYPE = "zk-wallet.username-observed.v1" as const;
 
 interface OriginRequest {
   readonly topUrl: string;
@@ -21,6 +22,11 @@ export interface AutofillSelectRequest extends OriginRequest {
 export interface CaptureRequest extends OriginRequest {
   readonly password: string;
   readonly type: typeof CAPTURE_REQUEST_TYPE | typeof CAPTURE_CONFIRM_TYPE;
+  readonly username: string;
+}
+
+export interface UsernameObservedRequest extends OriginRequest {
+  readonly type: typeof USERNAME_OBSERVED_TYPE;
   readonly username: string;
 }
 
@@ -107,6 +113,46 @@ export function parseCaptureRequest(
     : null;
 }
 
+export function parseUsernameObservedRequest(value: unknown): UsernameObservedRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") ===
+    "topUrl,type,userInitiated,username,version" &&
+    request.type === USERNAME_OBSERVED_TYPE &&
+    typeof request.username === "string" &&
+    request.username.length > 0 &&
+    request.username.length <= 4_096 &&
+    validOriginRequest(request)
+    ? (request as unknown as UsernameObservedRequest)
+    : null;
+}
+
+export function isUsernameField(input: HTMLInputElement): boolean {
+  if (!input.isConnected || input.disabled || input.readOnly || input.type === "password") {
+    return false;
+  }
+  const hint =
+    `${input.autocomplete} ${input.type} ${input.name} ${input.id} ${input.getAttribute("aria-label") ?? ""}`.toLocaleLowerCase();
+  return (
+    input.autocomplete === "username" ||
+    input.autocomplete === "email" ||
+    input.type === "email" ||
+    /(?:^|[^a-z])(email|e-mail|user(?:name)?|login)(?:[^a-z]|$)/u.test(hint)
+  );
+}
+
+export function isLoginAction(element: Element): boolean {
+  const action = element.closest<HTMLButtonElement | HTMLInputElement>(
+    'button, input[type="submit"], input[type="button"]',
+  );
+  if (action === null) return false;
+  if (action instanceof HTMLButtonElement && action.type === "submit") return true;
+  if (action instanceof HTMLInputElement && action.type === "submit") return true;
+  const label =
+    `${"value" in action ? action.value : ""} ${action.textContent ?? ""} ${action.getAttribute("aria-label") ?? ""}`.toLocaleLowerCase();
+  return /\b(?:continue|log\s*in|next|sign\s*in|submit)\b/u.test(label);
+}
+
 export function loginFields(document: Document): {
   readonly password: HTMLInputElement;
   readonly username?: HTMLInputElement;
@@ -167,7 +213,7 @@ export function captureLoginFields(document: Document): {
   if (password === undefined) return null;
   const inputs = [...(password.form?.querySelectorAll<HTMLInputElement>("input") ?? [])];
   const username =
-    inputs.find((input) => ["email", "username"].includes(input.autocomplete)) ??
+    inputs.find(isUsernameField) ??
     inputs.find((input) => ["email", "text"].includes(input.type));
   return { password: password.value, username: username?.value ?? "" };
 }

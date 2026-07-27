@@ -13,6 +13,7 @@ import {
   parseAutofillRequest,
   parseAutofillSelectRequest,
   parseCaptureRequest,
+  parseUsernameObservedRequest,
 } from "../src/autofill";
 import { ExtensionSessionCoordinator } from "../src/session";
 
@@ -52,6 +53,10 @@ export default defineBackground(() => {
   });
   coordinator.bind(service);
   const initialized = coordinator.initialize().then(() => service.initialize());
+  const observedUsernames = new Map<
+    string,
+    { readonly expiresAt: number; readonly username: string }
+  >();
 
   const trustedOrigin = (topUrl: string, sender: Browser.runtime.MessageSender): boolean => {
     try {
@@ -84,6 +89,14 @@ export default defineBackground(() => {
       return (await service.listItems()).filter(
         (item): item is LoginItem => item.type === "login",
       );
+    } catch {
+      return null;
+    }
+  };
+  const observationKey = (sender: Browser.runtime.MessageSender, topUrl: string): string | null => {
+    if (sender.tab?.id === undefined) return null;
+    try {
+      return `${sender.tab.id}:${new URL(topUrl).origin}`;
     } catch {
       return null;
     }
@@ -143,6 +156,19 @@ export default defineBackground(() => {
           : { status: "no-match", version: 1 };
       }
 
+      const observed = parseUsernameObservedRequest(message);
+      if (observed !== null) {
+        if (!trustedOrigin(observed.topUrl, sender)) return { status: "unavailable", version: 1 };
+        const key = observationKey(sender, observed.topUrl);
+        if (key !== null) {
+          observedUsernames.set(key, {
+            expiresAt: Date.now() + 10 * 60 * 1_000,
+            username: observed.username,
+          });
+        }
+        return;
+      }
+
       const capture =
         parseCaptureRequest(message, CAPTURE_REQUEST_TYPE) ??
         parseCaptureRequest(message, CAPTURE_CONFIRM_TYPE);
@@ -150,10 +176,21 @@ export default defineBackground(() => {
       if (!trustedOrigin(capture.topUrl, sender)) {
         return { status: "unavailable", version: 1 };
       }
+      const key = observationKey(sender, capture.topUrl);
+      const remembered = key === null ? undefined : observedUsernames.get(key);
+      if (key !== null && remembered !== undefined && remembered.expiresAt <= Date.now()) {
+        observedUsernames.delete(key);
+      }
+      const username =
+        capture.username.length > 0
+          ? capture.username
+          : remembered !== undefined && remembered.expiresAt > Date.now()
+            ? remembered.username
+            : "";
       const logins = await unlockedLogins();
       if (logins === null) return { status: "locked", version: 1 };
       const decision = decideCredentialCapture({
-        captured: { password: capture.password, username: capture.username },
+        captured: { password: capture.password, username },
         credentials: logins.map((login) => ({
           id: login.id,
           password: login.password,
@@ -185,7 +222,7 @@ export default defineBackground(() => {
           password: capture.password,
           title: decision.displayHost,
           uris: [decision.canonicalOrigin],
-          username: capture.username,
+          username,
         });
       } else {
         const existing = logins.find((login) => login.id === decision.credentialId);
@@ -200,9 +237,10 @@ export default defineBackground(() => {
           ...(existing.tags === undefined ? {} : { tags: existing.tags }),
           title: existing.title,
           uris: existing.uris,
-          username: capture.username,
+          username,
         });
       }
+      if (key !== null) observedUsernames.delete(key);
       return { action: decision.action, status: "saved", version: 1 };
     },
   );
