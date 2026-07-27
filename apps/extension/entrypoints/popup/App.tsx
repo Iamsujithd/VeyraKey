@@ -263,8 +263,18 @@ export function App({ client }: AppProps) {
         providerConfiguration={{ googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID }}
         surface="Browser extension"
       />
-      <section aria-label="Browser login tools">
+      <section className="browser-tools" aria-label="Browser login tools">
+        <header className="browser-tools-header">
+          <span className="browser-tools-symbol" aria-hidden="true">
+            •••
+          </span>
+          <span>
+            <strong>AutoFill</strong>
+            <small>Current website</small>
+          </span>
+        </header>
         <button
+          className="browser-tool-button"
           type="button"
           onClick={() => {
             setFillStatus("Checking the active site…");
@@ -273,9 +283,11 @@ export function App({ client }: AppProps) {
               .catch(() => setFillStatus("Autofill could not access this page."));
           }}
         >
-          Fill current site
+          <span aria-hidden="true">↗</span>
+          <span>Fill Password</span>
         </button>
         <button
+          className="browser-tool-button"
           type="button"
           onClick={() => {
             setCapture(null);
@@ -291,9 +303,11 @@ export function App({ client }: AppProps) {
               .catch(() => setFillStatus("The login form could not be captured safely."));
           }}
         >
-          Save or update current login
+          <span aria-hidden="true">＋</span>
+          <span>Save or Update Password</span>
         </button>
         <button
+          className="browser-tool-button"
           type="button"
           onClick={() => {
             setFillStatus("Checking for an exact-origin authenticator…");
@@ -302,11 +316,14 @@ export function App({ client }: AppProps) {
               .catch(() => setFillStatus("The authenticator code could not be filled safely."));
           }}
         >
-          Fill current TOTP
+          <span aria-hidden="true">⌁</span>
+          <span>Fill Verification Code</span>
         </button>
-        <p aria-live="polite">{fillStatus}</p>
+        <p className="browser-tool-status" aria-live="polite">
+          {fillStatus}
+        </p>
         {capture === null ? null : (
-          <div role="dialog" aria-labelledby="capture-title">
+          <div className="capture-sheet" role="dialog" aria-labelledby="capture-title">
             <h2 id="capture-title">{capture.action === "save" ? "Save login" : "Update login"}</h2>
             <p>
               Confirm {capture.action} for the exact origin <strong>{capture.displayHost}</strong>.

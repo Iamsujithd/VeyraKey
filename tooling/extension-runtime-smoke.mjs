@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 const endpoint = process.env.ZK_WALLET_CDP ?? "http://127.0.0.1:9223";
 const expectedExtensionId = "lnabfclakgdolgcfallnnhkeeoclfkcf";
+const fixtureHost = "www.google.com";
+const fixtureUrl = `https://${fixtureHost}/robots.txt`;
 const version = await (await fetch(`${endpoint}/json/version`)).json();
 const socket = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
@@ -27,13 +29,18 @@ socket.addEventListener("message", ({ data }) => {
   const request = pending.get(message.id);
   if (request === undefined) return;
   pending.delete(message.id);
+  clearTimeout(request.timer);
   if (message.error !== undefined) request.reject(new Error(message.error.message));
   else request.resolve(message.result);
 });
 const send = (method, params = {}, sessionId) =>
   new Promise((resolve, reject) => {
     const id = ++commandId;
-    pending.set(id, { reject, resolve });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`${method} timed out`));
+    }, 5_000);
+    pending.set(id, { reject, resolve, timer });
     socket.send(
       JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }),
     );
@@ -88,12 +95,12 @@ const pageSession = await attach(page.targetId);
 await send("Page.enable", {}, pageSession);
 await send("Runtime.enable", {}, pageSession);
 await send("Log.enable", {}, pageSession);
-await send("Page.navigate", { url: "https://example.com/" }, pageSession);
+await send("Page.navigate", { url: fixtureUrl }, pageSession).catch(() => undefined);
 await pause(2_000);
 
 available = await targets();
 const activePage = available.find(
-  (target) => target.type === "page" && target.url.startsWith("https://example.com"),
+  (target) => target.type === "page" && target.url.startsWith(fixtureUrl),
 );
 assert(activePage, "HTTPS fixture page did not load");
 const activePageSession =
@@ -111,13 +118,13 @@ const pendingCapture = {
   action: "save",
   capture: {
     password: "runtime-only-secret",
-    topUrl: "https://example.com/login",
+    topUrl: fixtureUrl,
     type: "zk-wallet.capture-request.v1",
     userInitiated: true,
     username: "runtime@example.com",
     version: 1,
   },
-  displayHost: "example.com",
+  displayHost: fixtureHost,
   expiresAt: Date.now() + 120_000,
   username: "runtime@example.com",
 };
@@ -126,13 +133,25 @@ await evaluate(
   `chrome.storage.session.set(${JSON.stringify({ [storageKey]: pendingCapture })})`,
 );
 
-await send("Target.closeTarget", { targetId: worker.targetId });
+await send("Target.closeTarget", { targetId: worker.targetId }).catch(() => undefined);
+await pause(500);
+const wakePopup = await send("Target.createTarget", {
+  url: `chrome-extension://${expectedExtensionId}/popup.html`,
+});
+const wakePopupSession = await attach(wakePopup.targetId);
 await pause(500);
 await send(
+  "Runtime.evaluate",
+  {
+    expression: `void chrome.runtime.sendMessage({type:"zk-wallet.capture-pending.v1",version:1}).catch(()=>undefined)`,
+  },
+  wakePopupSession,
+).catch(() => undefined);
+await send(
   "Page.navigate",
-  { url: "https://example.com/?after-worker-restart=1" },
+  { url: `${fixtureUrl}?after-worker-restart=1` },
   activePageSession,
-);
+).catch(() => undefined);
 await pause(2_000);
 
 available = await targets();

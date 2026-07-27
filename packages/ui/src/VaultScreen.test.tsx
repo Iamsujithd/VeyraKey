@@ -135,10 +135,15 @@ describe("VaultScreen", () => {
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "wrong password" },
     });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Master password")).toHaveValue("wrong password"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Unlock vault" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Unable to unlock. Check the password or local vault data.",
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Unable to unlock. Check the password or local vault data.",
+      ),
     );
     expect(screen.queryByText(/primitive details/i)).not.toBeInTheDocument();
   });

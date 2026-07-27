@@ -84,6 +84,12 @@ describe("VaultScreen Task 3 flows", () => {
     fireEvent.change(screen.getByLabelText("Confirm master password"), {
       target: { value: "correct horse battery staple" },
     });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Master password")).toHaveValue("correct horse battery staple");
+      expect(screen.getByLabelText("Confirm master password")).toHaveValue(
+        "correct horse battery staple",
+      );
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create encrypted vault" }));
 
     expect(

@@ -79,7 +79,7 @@ describe("extension popup", () => {
     render(<App client={vaultClient} />);
     await screen.findByRole("heading", { name: "Vault unlocked" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save or update current login" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save or Update Password" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent(/exact origin example.test/i);
     expect(createLogin).not.toHaveBeenCalled();
 

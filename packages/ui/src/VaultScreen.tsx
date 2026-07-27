@@ -17,7 +17,7 @@ import {
   parseOtpAuthQr,
   parseOtpAuthUri,
 } from "@zk-wallet/security";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useState } from "react";
 
 export type SensitiveCompartment = "credential" | "document";
 
@@ -427,7 +427,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setRestoreConfirmation("");
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (screenState.status !== "unlocked" || recoveryContext !== "verified") {
       setMasterPassword("");
       setConfirmation("");

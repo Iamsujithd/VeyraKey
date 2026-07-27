@@ -1,0 +1,107 @@
+# Apple Passwords extension benchmark
+
+Date: 2026-07-27
+
+## Purpose
+
+This document translates Apple Passwords behavior and Apple's Liquid Glass guidance into
+requirements for the browser extension. It is a benchmark, not permission to copy Apple
+branding, proprietary artwork, or private system interfaces.
+
+Chrome cannot render Safari's native Password AutoFill surface or Apple's system-owned
+authentication sheets. The extension therefore aims for the same interaction principles:
+field-level suggestions, explicit user consent, quiet prompts, local decryption, and a
+separate full manager.
+
+## What Apple Passwords provides
+
+Apple's current Passwords experience includes:
+
+- Passwords, passkeys, verification codes, Wi-Fi credentials, security recommendations,
+  deleted items, and shared password groups.
+- AutoFill across supported apps and websites, with credentials synchronized through
+  iCloud Keychain.
+- Strong-password generation during account creation.
+- Compromised, weak, and reused-password warnings.
+- Password history and recovery of recently deleted credentials.
+- Explicit credential selection and, where configured, biometric or device authentication
+  before a credential is released.
+- Domain association checks intended to avoid suggesting a credential to the wrong site.
+
+## Browser interaction model
+
+Apple's interaction is contextual instead of modal:
+
+1. A username or password field receives focus.
+2. A compact suggestion appears next to the field or in the platform's AutoFill surface.
+3. The user chooses a saved account.
+4. Authentication is requested only when policy requires it.
+5. The credential is filled and the user can submit the form.
+6. After a successful new or changed login, the system offers to save or update it.
+
+The browser extension should not open a large, fixed panel merely because a login page was
+detected. Its in-page UI must remain anchored to the active field, stay available long
+enough to interact with, and dismiss only through an explicit choice, navigation, or a
+clear outside action.
+
+## Liquid Glass design principles applied
+
+Apple describes Liquid Glass as an adaptive material with optical depth, highlights, and
+content-aware appearance. It is not a universal blur effect. The extension applies these
+principles as follows:
+
+- Use glass for compact controls and transient, field-level surfaces.
+- Preserve a stable, legible background for larger management surfaces.
+- Tint the main action selectively instead of coloring every control.
+- Adapt to light and dark appearance.
+- Retain strong borders, solid fallbacks, and readable contrast when reduced transparency
+  is requested.
+- Remove nonessential movement when reduced motion is requested.
+- Use the platform system-font stack and compact, grouped controls.
+
+## Current parity
+
+| Capability | Current state |
+| --- | --- |
+| Detect username/password forms | Implemented, including dynamically inserted forms |
+| Offer credentials at the active field | Implemented |
+| Fill username and password after selection | Implemented |
+| Capture new or updated credentials after submit | Implemented |
+| Keep the save choice interactive across navigation | Implemented through extension service-worker state |
+| Fill time-based verification codes | Implemented |
+| Synchronize encrypted revisions through Google Drive app data | Implemented |
+| Restore synchronized vault data on another device | Implemented; the user must connect the same Drive account and unlock locally |
+| Local-only decryption | Implemented |
+| Adaptive glass-like light/dark UI | Implemented |
+| Reduced transparency and reduced motion | Implemented |
+| Password health checks | Implemented locally |
+| Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
+| Native Apple biometric sheet | Not available to a Chrome extension; use browser/platform authentication when added |
+| Native passkey provider integration | Future work |
+| Password sharing groups | Future work |
+| Wi-Fi password manager | Future work |
+| Recently Deleted and password history UI | Future work |
+| Store submission only after confirmed login success | Needs broader site-specific heuristics; current capture is submit/navigation based |
+
+## Release acceptance criteria
+
+- No credential is filled or saved without a direct user action.
+- Suggestions are scoped to the normalized site origin and matching login records.
+- Password text is never inserted into page HTML, URLs, logs, analytics, or error messages.
+- In-page UI remains usable on responsive layouts, single-page applications, shadow-DOM
+  forms, and dynamically inserted login steps where browser permissions allow access.
+- Extension reload, navigation, and service-worker suspension do not silently lose a
+  pending save decision.
+- Google Drive receives encrypted vault state only; decryption keys remain local.
+- Automated unit, integration, package, and real-browser lifecycle tests pass before a
+  release artifact is installed.
+
+## Primary sources
+
+- [Apple Passwords on iPhone](https://support.apple.com/guide/iphone/use-passwords-iph18e98624/ios)
+- [Password AutoFill security](https://developer.apple.com/documentation/security/password-autofill)
+- [AutoFill usernames and passwords in Safari](https://support.apple.com/guide/safari/autofill-usernames-and-passwords-ibrwf71ba236/mac)
+- [Password security recommendations](https://support.apple.com/guide/security/password-security-recommendations-sec7aefe77c3/web)
+- [Apple Passwords and iCloud Keychain security](https://support.apple.com/guide/security/password-security-sec1c89c6f3b/web)
+- [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/)
+

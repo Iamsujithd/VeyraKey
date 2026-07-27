@@ -1,42 +1,499 @@
+:root {
+  color: #1d1d1f;
+  background: transparent;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+}
+
 html,
 body,
 #root {
-  width: 390px;
-  min-width: 390px;
-  min-height: 590px;
+  width: 410px;
+  min-width: 410px;
+  min-height: 580px;
+}
+
+body {
+  overflow-x: hidden;
+  color: #1d1d1f;
+  background:
+    radial-gradient(circle at 12% -8%, rgb(94 197 255 / 48%), transparent 38%),
+    radial-gradient(circle at 105% 5%, rgb(175 82 222 / 30%), transparent 36%),
+    linear-gradient(155deg, #f7fbff 0%, #eef1f7 48%, #f7f3fa 100%);
+}
+
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(112deg, transparent 18%, rgb(255 255 255 / 48%) 42%, transparent 67%),
+    radial-gradient(circle at 50% 115%, rgb(255 255 255 / 82%), transparent 48%);
+  content: "";
+  pointer-events: none;
 }
 
 .vault-shell {
-  min-height: 590px;
-  padding: 12px;
+  display: block;
+  min-height: auto;
+  padding: 0;
 }
 
 .vault-card {
-  padding: 20px;
-  border-radius: 20px;
+  width: 100%;
+  overflow: visible;
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  color: #1d1d1f;
+  background: transparent;
+  box-shadow: none;
+}
+
+.vault-card::before {
+  display: none;
 }
 
 .vault-header {
-  align-items: flex-start;
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  align-items: center;
+  padding: 2px 2px 12px;
+}
+
+.brand-lockup {
+  gap: 10px;
+}
+
+.brand-mark,
+.browser-tools-symbol {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 76%);
+  border-radius: 11px;
+  color: white;
+  background:
+    radial-gradient(circle at 25% 15%, rgb(255 255 255 / 52%), transparent 34%),
+    linear-gradient(145deg, #5ac8fa, #0a84ff 55%, #5e5ce6);
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 58%),
+    0 7px 18px rgb(10 132 255 / 24%);
+}
+
+.brand-copy strong {
+  color: #1d1d1f;
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.brand-copy span,
+.foundation-status,
+.vault-description,
+.form-guidance,
+.operation-status,
+.capability-note,
+.cloud-card-heading p {
+  color: rgb(60 60 67 / 68%);
 }
 
 .foundation-status {
-  margin-top: 6px;
-  font-size: 0;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 62%);
+  border-radius: 999px;
+  color: rgb(60 60 67 / 76%);
+  background: rgb(255 255 255 / 46%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 72%);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  font-size: 10px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: #34c759;
+  box-shadow: 0 0 0 4px rgb(52 199 89 / 12%);
 }
 
 .lock-illustration {
-  margin-top: 42px;
+  width: 66px;
+  height: 72px;
+  margin: 20px auto 14px;
+  transform: scale(0.72);
+  transform-origin: center;
+}
+
+.vault-copy {
+  padding-inline: 4px;
+}
+
+.eyebrow {
+  margin-bottom: 5px;
+  color: #007aff;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: none;
 }
 
 .vault-copy h1 {
-  font-size: 34px;
+  color: #1d1d1f;
+  font-size: 29px;
+  font-weight: 720;
+  letter-spacing: -0.035em;
 }
 
 .vault-description {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.privacy-note,
+.cloud-card,
+.security-section,
+.browser-tools,
+.capture-sheet,
+.app-navigation {
+  border: 1px solid rgb(255 255 255 / 66%);
+  background: linear-gradient(145deg, rgb(255 255 255 / 68%), rgb(247 247 250 / 45%));
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 78%),
+    0 12px 34px rgb(72 84 112 / 10%);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+}
+
+.privacy-note {
+  margin-top: 15px;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.privacy-note-icon {
+  color: white;
+  background: #0a84ff;
+}
+
+.privacy-note p {
+  color: rgb(60 60 67 / 68%);
+  font-size: 11px;
+}
+
+.privacy-note strong {
+  color: #1d1d1f;
+}
+
+.vault-form,
+.vault-actions {
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.vault-field {
+  gap: 6px;
+  color: #1d1d1f;
+  font-size: 12px;
+  font-weight: 590;
+}
+
+.vault-input {
+  min-height: 42px;
+  border: 1px solid rgb(60 60 67 / 16%);
+  border-radius: 11px;
+  color: #1d1d1f;
+  background: rgb(255 255 255 / 72%);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 4%);
+}
+
+.vault-input:focus-visible {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 3px rgb(10 132 255 / 18%);
+}
+
+.action-button,
+.secondary-button,
+.danger-button {
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 640;
+  box-shadow: none;
+}
+
+.action-button {
+  border-color: rgb(0 122 255 / 42%);
+  color: white;
+  background: linear-gradient(180deg, #0a84ff, #0077ed);
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 30%),
+    0 7px 16px rgb(0 122 255 / 18%);
+}
+
+.action-button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2695ff, #087be9);
+}
+
+.secondary-button {
+  border-color: rgb(60 60 67 / 13%);
+  color: #007aff;
+  background: rgb(255 255 255 / 48%);
+}
+
+.danger-button {
+  color: #ff3b30;
+  background: rgb(255 59 48 / 8%);
+}
+
+.app-navigation {
+  gap: 3px;
+  margin: 14px 0;
+  padding: 4px;
+  border-radius: 13px;
+}
+
+.nav-button {
+  min-height: 36px;
+  border-radius: 9px;
+  color: rgb(60 60 67 / 66%);
+  font-size: 12px;
+  font-weight: 590;
+}
+
+.nav-button:hover,
+.nav-button:focus-visible {
+  color: #1d1d1f;
+  background: rgb(255 255 255 / 52%);
+}
+
+.nav-button-active {
+  color: #1d1d1f;
+  background: rgb(255 255 255 / 82%);
+  box-shadow:
+    0 2px 7px rgb(0 0 0 / 9%),
+    inset 0 1px rgb(255 255 255 / 88%);
+}
+
+.cloud-card,
+.security-section {
+  gap: 10px;
+  margin-block: 12px;
+  padding: 14px;
+  border-radius: 16px;
+}
+
+.cloud-card-heading h2,
+.security-section h2 {
+  color: #1d1d1f;
+}
+
+.browser-tools {
+  display: grid;
+  gap: 4px;
+  margin: 0 18px 18px;
+  padding: 9px;
+  border-radius: 18px;
+}
+
+.browser-tools-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 5px 8px;
+}
+
+.browser-tools-symbol {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 11px;
+  letter-spacing: -0.1em;
+}
+
+.browser-tools-header > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.browser-tools-header strong {
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.browser-tools-header small {
+  color: rgb(60 60 67 / 62%);
+  font-size: 10px;
+}
+
+.browser-tool-button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 7px;
+  min-height: 39px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 11px;
+  color: #1d1d1f;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.browser-tool-button:hover,
+.browser-tool-button:focus-visible {
+  outline: none;
+  background: rgb(0 122 255 / 10%);
+}
+
+.browser-tool-button > span:first-child {
+  color: #007aff;
+  font-size: 16px;
+  text-align: center;
+}
+
+.browser-tool-button > span:last-child {
+  font-size: 12px;
+  font-weight: 590;
+}
+
+.browser-tool-status {
+  min-height: 0;
+  margin: 2px 7px;
+  color: rgb(60 60 67 / 68%);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.browser-tool-status:empty {
+  display: none;
+}
+
+.capture-sheet {
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.capture-sheet h2,
+.capture-sheet p {
+  margin: 0 0 8px;
+}
+
+.capture-sheet h2 {
   font-size: 14px;
 }
 
+.capture-sheet p {
+  color: rgb(60 60 67 / 68%);
+  font-size: 11px;
+}
+
 .vault-footer {
-  flex-wrap: wrap;
+  margin-top: 14px;
+  color: rgb(60 60 67 / 50%);
+  font-size: 9px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  body {
+    color: #f5f5f7;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 8% -6%, rgb(10 132 255 / 38%), transparent 40%),
+      radial-gradient(circle at 102% 2%, rgb(175 82 222 / 26%), transparent 38%),
+      linear-gradient(155deg, #17181b, #111216 62%, #1a171d);
+  }
+
+  .brand-copy strong,
+  .vault-copy h1,
+  .privacy-note strong,
+  .vault-field,
+  .cloud-card-heading h2,
+  .security-section h2,
+  .browser-tools-header strong,
+  .browser-tool-button,
+  .nav-button-active {
+    color: #f5f5f7;
+  }
+
+  .brand-copy span,
+  .foundation-status,
+  .vault-description,
+  .form-guidance,
+  .operation-status,
+  .capability-note,
+  .cloud-card-heading p,
+  .privacy-note p,
+  .browser-tools-header small,
+  .browser-tool-status {
+    color: rgb(235 235 245 / 62%);
+  }
+
+  .foundation-status,
+  .privacy-note,
+  .cloud-card,
+  .security-section,
+  .browser-tools,
+  .capture-sheet,
+  .app-navigation {
+    border-color: rgb(255 255 255 / 13%);
+    background: linear-gradient(145deg, rgb(52 52 56 / 74%), rgb(30 30 32 / 58%));
+    box-shadow:
+      inset 0 1px rgb(255 255 255 / 11%),
+      0 14px 36px rgb(0 0 0 / 24%);
+  }
+
+  .vault-input {
+    border-color: rgb(255 255 255 / 13%);
+    color: #f5f5f7;
+    background: rgb(28 28 30 / 68%);
+  }
+
+  .nav-button {
+    color: rgb(235 235 245 / 58%);
+  }
+
+  .nav-button:hover,
+  .nav-button:focus-visible,
+  .nav-button-active {
+    background: rgb(255 255 255 / 10%);
+  }
+
+  .secondary-button {
+    border-color: rgb(255 255 255 / 12%);
+    color: #64a8ff;
+    background: rgb(255 255 255 / 7%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .foundation-status,
+  .privacy-note,
+  .cloud-card,
+  .security-section,
+  .browser-tools,
+  .capture-sheet,
+  .app-navigation {
+    background: #f2f2f7;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none;
+    transition: none;
+  }
 }
