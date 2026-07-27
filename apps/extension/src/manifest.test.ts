@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { extensionManifest, manifestForBrowser } from "./manifest";
 
 describe("extension manifest", () => {
+  it("identifies the WebAssembly-enabled build", () => {
+    expect(extensionManifest.version).toBe("0.0.2");
+  });
+
   it("requests only browser tools, OAuth identity, storage, and Google API access", () => {
     expect(extensionManifest.permissions).toEqual([
       "activeTab",
