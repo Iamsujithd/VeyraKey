@@ -3,12 +3,16 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTOFILL_REQUEST_TYPE,
+  CAPTURE_CONFIRM_TYPE,
+  CAPTURE_PENDING_TYPE,
   CAPTURE_REQUEST_TYPE,
   captureLoginFields,
   fillLoginFields,
   isLoginAction,
   isUsernameField,
   parseAutofillRequest,
+  parseCaptureActionRequest,
+  parseCapturePendingRequest,
   parseCaptureRequest,
   parseUsernameObservedRequest,
   USERNAME_OBSERVED_TYPE,
@@ -135,6 +139,27 @@ describe("extension automatic autofill", () => {
         version: 1,
       }),
     ).not.toBeNull();
+  });
+
+  it("accepts only minimal persistent capture prompt actions", () => {
+    expect(parseCapturePendingRequest({ type: CAPTURE_PENDING_TYPE, version: 1 })).not.toBeNull();
+    expect(
+      parseCaptureActionRequest(
+        { type: CAPTURE_CONFIRM_TYPE, userInitiated: true, version: 1 },
+        CAPTURE_CONFIRM_TYPE,
+      ),
+    ).not.toBeNull();
+    expect(
+      parseCaptureActionRequest(
+        {
+          password: "must-not-cross-navigation",
+          type: CAPTURE_CONFIRM_TYPE,
+          userInitiated: true,
+          version: 1,
+        },
+        CAPTURE_CONFIRM_TYPE,
+      ),
+    ).toBeNull();
   });
 
   it("fails closed across malformed and hostile message variations", () => {

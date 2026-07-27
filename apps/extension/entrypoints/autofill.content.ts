@@ -3,6 +3,8 @@ import {
   AUTOFILL_SELECT_TYPE,
   type AutofillResponse,
   CAPTURE_CONFIRM_TYPE,
+  CAPTURE_DISMISS_TYPE,
+  CAPTURE_PENDING_TYPE,
   CAPTURE_REQUEST_TYPE,
   type CaptureResponse,
   captureLoginFields,
@@ -17,16 +19,21 @@ export default defineContentScript({
   matches: ["https://*/*"],
   main() {
     let promptHost: HTMLElement | null = null;
+    let promptKind: "capture" | "suggestions" | null = null;
     let requestInProgress = false;
 
     const closePrompt = () => {
       promptHost?.remove();
       promptHost = null;
+      promptKind = null;
     };
     const prompt = (
+      kind: "capture" | "suggestions",
       title: string,
       options: readonly { readonly label: string; readonly run: () => void }[],
+      dismissAction?: () => void,
     ) => {
+      if (promptKind === "capture" && kind === "suggestions") return;
       closePrompt();
       const host = document.createElement("div");
       host.style.cssText =
@@ -57,12 +64,15 @@ export default defineContentScript({
       dismiss.style.cssText =
         "display:block;width:100%;margin-top:8px;padding:8px;border:0;background:transparent;color:#cbd5e1;cursor:pointer";
       dismiss.addEventListener("click", (event) => {
-        if (event.isTrusted) closePrompt();
+        if (!event.isTrusted) return;
+        closePrompt();
+        dismissAction?.();
       });
       panel.append(dismiss);
       root.append(panel);
       document.documentElement.append(host);
       promptHost = host;
+      promptKind = kind;
     };
 
     const requestSuggestions = () => {
@@ -78,6 +88,7 @@ export default defineContentScript({
         .then((response: AutofillResponse | undefined) => {
           if (response?.status !== "suggestions") return;
           prompt(
+            "suggestions",
             `Fill a saved login for ${response.displayHost}?`,
             response.credentials.map((credential) => ({
               label: credential.username || "Saved login",
@@ -118,6 +129,7 @@ export default defineContentScript({
         .then((response: CaptureResponse | undefined) => {
           if (response?.status !== "offer") return;
           prompt(
+            "capture",
             `${response.action === "save" ? "Save" : "Update"} login for ${response.displayHost}?`,
             [
               {
@@ -125,8 +137,6 @@ export default defineContentScript({
                 run: () => {
                   closePrompt();
                   void browser.runtime.sendMessage({
-                    ...captured,
-                    topUrl: location.href,
                     type: CAPTURE_CONFIRM_TYPE,
                     userInitiated: true,
                     version: 1,
@@ -134,6 +144,45 @@ export default defineContentScript({
                 },
               },
             ],
+            () => {
+              void browser.runtime.sendMessage({
+                type: CAPTURE_DISMISS_TYPE,
+                userInitiated: true,
+                version: 1,
+              });
+            },
+          );
+        })
+        .catch(() => undefined);
+    };
+    const showPendingCapture = () => {
+      void browser.runtime
+        .sendMessage({ type: CAPTURE_PENDING_TYPE, version: 1 })
+        .then((response: CaptureResponse | undefined) => {
+          if (response?.status !== "offer") return;
+          prompt(
+            "capture",
+            `${response.action === "save" ? "Save" : "Update"} login for ${response.displayHost}?`,
+            [
+              {
+                label: response.action === "save" ? "Save in vault" : "Update saved login",
+                run: () => {
+                  closePrompt();
+                  void browser.runtime.sendMessage({
+                    type: CAPTURE_CONFIRM_TYPE,
+                    userInitiated: true,
+                    version: 1,
+                  });
+                },
+              },
+            ],
+            () => {
+              void browser.runtime.sendMessage({
+                type: CAPTURE_DISMISS_TYPE,
+                userInitiated: true,
+                version: 1,
+              });
+            },
           );
         })
         .catch(() => undefined);
@@ -200,11 +249,19 @@ export default defineContentScript({
       true,
     );
     document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.isTrusted && event.key === "Enter") offerCapture();
+      },
+      true,
+    );
+    document.addEventListener(
       "submit",
       (event) => {
         if (event.isTrusted) offerCapture();
       },
       true,
     );
+    showPendingCapture();
   },
 });

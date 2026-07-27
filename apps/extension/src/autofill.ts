@@ -2,6 +2,8 @@ export const AUTOFILL_REQUEST_TYPE = "zk-wallet.autofill-request.v1" as const;
 export const AUTOFILL_SELECT_TYPE = "zk-wallet.autofill-select.v1" as const;
 export const CAPTURE_REQUEST_TYPE = "zk-wallet.capture-request.v1" as const;
 export const CAPTURE_CONFIRM_TYPE = "zk-wallet.capture-confirm.v1" as const;
+export const CAPTURE_DISMISS_TYPE = "zk-wallet.capture-dismiss.v1" as const;
+export const CAPTURE_PENDING_TYPE = "zk-wallet.capture-pending.v1" as const;
 export const USERNAME_OBSERVED_TYPE = "zk-wallet.username-observed.v1" as const;
 
 interface OriginRequest {
@@ -21,8 +23,19 @@ export interface AutofillSelectRequest extends OriginRequest {
 
 export interface CaptureRequest extends OriginRequest {
   readonly password: string;
-  readonly type: typeof CAPTURE_REQUEST_TYPE | typeof CAPTURE_CONFIRM_TYPE;
+  readonly type: typeof CAPTURE_REQUEST_TYPE;
   readonly username: string;
+}
+
+export interface CaptureActionRequest {
+  readonly type: typeof CAPTURE_CONFIRM_TYPE | typeof CAPTURE_DISMISS_TYPE;
+  readonly userInitiated: true;
+  readonly version: 1;
+}
+
+export interface CapturePendingRequest {
+  readonly type: typeof CAPTURE_PENDING_TYPE;
+  readonly version: 1;
 }
 
 export interface UsernameObservedRequest extends OriginRequest {
@@ -96,7 +109,7 @@ export function parseAutofillSelectRequest(value: unknown): AutofillSelectReques
 
 export function parseCaptureRequest(
   value: unknown,
-  type: typeof CAPTURE_REQUEST_TYPE | typeof CAPTURE_CONFIRM_TYPE,
+  type: typeof CAPTURE_REQUEST_TYPE,
 ): CaptureRequest | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const request = value as Record<string, unknown>;
@@ -110,6 +123,30 @@ export function parseCaptureRequest(
     request.username.length <= 4_096 &&
     validOriginRequest(request)
     ? (request as unknown as CaptureRequest)
+    : null;
+}
+
+export function parseCaptureActionRequest(
+  value: unknown,
+  type: typeof CAPTURE_CONFIRM_TYPE | typeof CAPTURE_DISMISS_TYPE,
+): CaptureActionRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") === "type,userInitiated,version" &&
+    request.type === type &&
+    request.userInitiated === true &&
+    request.version === 1
+    ? (request as unknown as CaptureActionRequest)
+    : null;
+}
+
+export function parseCapturePendingRequest(value: unknown): CapturePendingRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") === "type,version" &&
+    request.type === CAPTURE_PENDING_TYPE &&
+    request.version === 1
+    ? (request as unknown as CapturePendingRequest)
     : null;
 }
 
