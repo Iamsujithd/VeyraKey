@@ -15,10 +15,10 @@ describe("extension manifest", () => {
   it("uses a restrictive extension-page CSP", () => {
     const policy = extensionManifest.content_security_policy.extension_pages;
 
-    expect(policy).toContain("script-src 'self'");
+    expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(policy).toContain("object-src 'none'");
     expect(policy).toContain("connect-src 'self' https://www.googleapis.com");
-    expect(policy).not.toContain("unsafe-eval");
+    expect(policy).not.toMatch(/(?:^|[\s;])'unsafe-eval'(?:[\s;]|$)/u);
     expect(policy).not.toContain("unsafe-inline");
   });
 

@@ -56,10 +56,13 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   }
   const extensionPolicy = manifest.content_security_policy?.extension_pages ?? "";
   if (
-    !extensionPolicy.includes("script-src 'self'") ||
+    !extensionPolicy.includes("script-src 'self' 'wasm-unsafe-eval'") ||
     !extensionPolicy.includes("connect-src 'self' https://www.googleapis.com")
   ) {
-    throw new Error(`${browser} CSP is missing the self-only script policy`);
+    throw new Error(`${browser} CSP is missing the reviewed script or connection policy`);
+  }
+  if (/(?:^|[\s;])'unsafe-eval'(?:[\s;]|$)/u.test(extensionPolicy)) {
+    throw new Error(`${browser} CSP enables unrestricted script evaluation`);
   }
 }
 

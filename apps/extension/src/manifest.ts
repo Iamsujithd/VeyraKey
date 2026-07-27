@@ -4,7 +4,7 @@ export const extensionManifest = {
   },
   content_security_policy: {
     extension_pages:
-      "script-src 'self'; connect-src 'self' https://www.googleapis.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://www.googleapis.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   },
   description: "A browser-first zero-knowledge security and identity wallet.",
   host_permissions: ["https://www.googleapis.com/*"],
