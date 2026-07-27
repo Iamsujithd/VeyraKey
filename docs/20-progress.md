@@ -329,8 +329,8 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 - **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
   is registered for localhost and its configured test account. The pinned Chrome extension ID is
   `lnabfclakgdolgcfallnnhkeeoclfkcf`; its
-  `https://lnabfclakgdolgcfallnnhkeeoclfkcf.chromiumapp.org/oauth/google` redirect still needs to
-  be added after the Google account's fresh-verification prompt is completed. Microsoft OAuth is
-  blocked until the current account has an Entra tenant/directory. The real Chrome/Firefox/PRF
-  matrix has not run, and neither extension ZIP is store-signed. Task 14 must not be marked
-  complete until the applicable evidence is attached.
+  `https://lnabfclakgdolgcfallnnhkeeoclfkcf.chromiumapp.org/oauth/google` redirect is registered
+  on the Google OAuth client. Microsoft OAuth is blocked until the current account has an Entra
+  tenant/directory. The real installed-extension Chrome/Firefox/PRF matrix has not run, and neither
+  extension ZIP is store-signed. Task 14 must not be marked complete until the applicable evidence
+  is attached.
