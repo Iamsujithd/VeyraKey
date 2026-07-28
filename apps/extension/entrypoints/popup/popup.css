@@ -508,7 +508,9 @@ body::before {
 
 body.autofill-surface {
   overflow: hidden;
-  background: rgb(242 242 247 / 94%);
+  border-radius: 20px;
+  background: transparent;
+  clip-path: inset(0 round 20px);
 }
 
 body.autofill-surface::before {
@@ -518,23 +520,46 @@ body.autofill-surface::before {
 .biometric-shell {
   display: grid;
   min-height: 0;
-  padding: 10px;
+  padding: 0;
   place-items: center;
 }
 
 .biometric-card {
+  --lens-x: 22%;
+  --lens-y: 0%;
+  position: relative;
   display: grid;
   width: 100%;
   gap: 9px;
-  padding: 13px;
+  padding: 14px;
+  overflow: hidden;
   border: 1px solid rgb(255 255 255 / 70%);
-  border-radius: 18px;
-  background: rgb(255 255 255 / 72%);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 78%), transparent 34%),
+    linear-gradient(145deg, rgb(255 255 255 / 72%), rgb(235 235 245 / 52%));
   box-shadow:
-    0 12px 32px rgb(0 0 0 / 15%),
-    inset 0 1px rgb(255 255 255 / 86%);
-  backdrop-filter: blur(24px) saturate(165%);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
+    0 16px 42px rgb(0 0 0 / 20%),
+    inset 0 1px rgb(255 255 255 / 94%),
+    inset 0 -1px rgb(255 255 255 / 26%);
+  backdrop-filter: blur(36px) saturate(190%) contrast(106%);
+  -webkit-backdrop-filter: blur(36px) saturate(190%) contrast(106%);
+}
+
+.biometric-card::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 62%), transparent 36%),
+    linear-gradient(112deg, transparent 32%, rgb(255 255 255 / 20%) 50%, transparent 68%);
+  content: "";
+  pointer-events: none;
+}
+
+.biometric-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .biometric-card .eyebrow,
@@ -638,6 +663,27 @@ body.autofill-surface::before {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.biometric-action:hover,
+.biometric-accounts button:hover,
+.biometric-action:focus-visible,
+.biometric-accounts button:focus-visible {
+  outline: 0;
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 52%),
+    0 7px 18px rgb(0 87 255 / 24%);
+  filter: brightness(1.08);
+  transform: scale(1.012);
+}
+
+.biometric-action:active,
+.biometric-accounts button:active {
+  transform: scale(0.985);
 }
 
 .biometric-verification .biometric-action {
@@ -756,12 +802,18 @@ body.autofill-surface::before {
 
 @media (prefers-color-scheme: dark) {
   body.autofill-surface {
-    background: rgb(28 28 30 / 96%);
+    background: transparent;
   }
 
   .biometric-card {
     border-color: rgb(255 255 255 / 14%);
-    background: linear-gradient(145deg, rgb(52 52 56 / 86%), rgb(28 28 30 / 72%));
+    background:
+      radial-gradient(
+        circle at var(--lens-x) var(--lens-y),
+        rgb(118 118 128 / 34%),
+        transparent 34%
+      ),
+      linear-gradient(145deg, rgb(52 52 56 / 80%), rgb(28 28 30 / 66%));
     box-shadow:
       0 26px 66px rgb(0 0 0 / 44%),
       inset 0 1px rgb(255 255 255 / 12%);
@@ -794,6 +846,10 @@ body.autofill-surface::before {
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  body.autofill-surface {
+    background: #f2f2f7;
+  }
+
   .biometric-card {
     background: #f2f2f7;
     backdrop-filter: none;

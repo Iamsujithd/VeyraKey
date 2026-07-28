@@ -259,6 +259,7 @@ interface AuthenticatedAutofillTarget {
   readonly submitAfterFill?: boolean;
   readonly tabId: number;
   readonly topUrl: string;
+  readonly usernameHint?: string;
 }
 
 export function authenticatedAutofillTarget(search: string): AuthenticatedAutofillTarget | null {
@@ -267,9 +268,15 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
   if (!["biometric-autofill", "manual-autofill"].includes(mode ?? "")) return null;
   const credentialId = parameters.get("credentialId");
   const submit = parameters.get("submit");
+  const usernameHint = parameters.get("usernameHint");
   if ((credentialId === null) !== (submit === null)) return null;
+  if (credentialId !== null && usernameHint !== null) return null;
   const expectedKeys =
-    credentialId === null ? "mode,tabId,topUrl" : "credentialId,mode,submit,tabId,topUrl";
+    credentialId === null
+      ? usernameHint === null
+        ? "mode,tabId,topUrl"
+        : "mode,tabId,topUrl,usernameHint"
+      : "credentialId,mode,submit,tabId,topUrl";
   if ([...parameters.keys()].sort().join(",") !== expectedKeys) return null;
   if (
     credentialId !== null &&
@@ -279,7 +286,14 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
   }
   const tabId = Number(parameters.get("tabId"));
   const topUrl = parameters.get("topUrl");
-  if (!Number.isSafeInteger(tabId) || tabId < 0 || topUrl === null) return null;
+  if (
+    !Number.isSafeInteger(tabId) ||
+    tabId < 0 ||
+    topUrl === null ||
+    (usernameHint !== null && (usernameHint.trim().length === 0 || usernameHint.length > 320))
+  ) {
+    return null;
+  }
   try {
     const parsed = new URL(topUrl);
     return parsed.protocol === "https:" && parsed.username === "" && parsed.password === ""
@@ -288,6 +302,7 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
           method: mode === "biometric-autofill" ? "biometric" : "password",
           tabId,
           topUrl: parsed.href,
+          ...(usernameHint === null ? {} : { usernameHint }),
         }
       : null;
   } catch {
@@ -394,7 +409,7 @@ function AuthenticatedAutofill({
     if (client.listItems === undefined) {
       throw new Error("Encrypted login access is unavailable");
     }
-    return (await client.listItems()).filter(
+    const matching = (await client.listItems()).filter(
       (item): item is LoginItem =>
         item.type === "login" &&
         (target.credentialId === undefined || item.id === target.credentialId) &&
@@ -405,6 +420,12 @@ function AuthenticatedAutofill({
           userInitiated: true,
         }).allowed,
     );
+    if (target.credentialId !== undefined || target.usernameHint === undefined) return matching;
+    const normalizedHint = target.usernameHint.trim().toLocaleLowerCase();
+    const hinted = matching.filter(
+      (item) => item.username.trim().toLocaleLowerCase() === normalizedHint,
+    );
+    return hinted.length === 1 ? hinted : matching;
   };
 
   const handleMatches = async (logins: readonly LoginItem[]) => {
@@ -476,7 +497,19 @@ function AuthenticatedAutofill({
 
   return (
     <main className="biometric-shell">
-      <section className="biometric-card" aria-labelledby="biometric-title">
+      <section
+        className="biometric-card"
+        aria-labelledby="biometric-title"
+        onPointerLeave={(event) => {
+          event.currentTarget.style.setProperty("--lens-x", "22%");
+          event.currentTarget.style.setProperty("--lens-y", "0%");
+        }}
+        onPointerMove={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          event.currentTarget.style.setProperty("--lens-x", `${event.clientX - bounds.left}px`);
+          event.currentTarget.style.setProperty("--lens-y", `${event.clientY - bounds.top}px`);
+        }}
+      >
         <header className="biometric-header">
           <span className="biometric-symbol" aria-hidden="true">
             ◎

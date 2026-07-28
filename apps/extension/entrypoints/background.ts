@@ -178,6 +178,17 @@ export default defineBackground(() => {
         if (authenticatedSelection !== null) {
           popupUrl.searchParams.set("credentialId", authenticatedSelection.credentialId);
           popupUrl.searchParams.set("submit", String(authenticatedSelection.submit));
+        } else {
+          const observed = await loadObservedUsername(
+            observationKey(sender, authenticatedAutofill.topUrl),
+          );
+          if (
+            observed !== null &&
+            observed.expiresAt > Date.now() &&
+            observed.username.trim().length > 0
+          ) {
+            popupUrl.searchParams.set("usernameHint", observed.username.slice(0, 320));
+          }
         }
         const popupPath = `${popupUrl.pathname.replace(/^\/+/u, "")}${popupUrl.search}`;
         await browser.action.setPopup({

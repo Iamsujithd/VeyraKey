@@ -59,6 +59,16 @@ describe("extension popup", () => {
     ).toEqual({ method: "password", tabId: 7, topUrl: "https://example.test/login" });
     expect(
       authenticatedAutofillTarget(
+        "?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin&usernameHint=person%40example.test",
+      ),
+    ).toEqual({
+      method: "biometric",
+      tabId: 7,
+      topUrl: "https://example.test/login",
+      usernameHint: "person@example.test",
+    });
+    expect(
+      authenticatedAutofillTarget(
         "?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
       ),
     ).toEqual({
@@ -211,7 +221,7 @@ describe("extension popup", () => {
     expect(lock).toHaveBeenCalled();
   });
 
-  it("fills the account clicked after biometric verification finds multiple matches", async () => {
+  it("automatically fills the observed username after biometrics finds multiple matches", async () => {
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
       status: "locked",
@@ -265,11 +275,10 @@ describe("extension popup", () => {
     window.history.replaceState(
       null,
       "",
-      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin&usernameHint=student",
     );
 
     render(<App client={vaultClient} />);
-    fireEvent.click(await screen.findByRole("button", { name: /student.*Fill this account/u }));
 
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(7, {

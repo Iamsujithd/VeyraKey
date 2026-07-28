@@ -79,25 +79,41 @@ export default defineContentScript({
       styles.textContent = `
         * { box-sizing: border-box; }
         .glass {
+          --lens-x: 24%;
+          --lens-y: 0%;
           position: relative;
           overflow: hidden;
           padding: 7px;
           border: 1px solid rgb(255 255 255 / 72%);
           border-radius: 14px;
           color: #151517;
-          background: linear-gradient(145deg, rgb(255 255 255 / 88%), rgb(242 242 247 / 76%));
-          box-shadow: 0 18px 46px rgb(0 0 0 / 22%), inset 0 1px 0 rgb(255 255 255 / 86%);
-          backdrop-filter: blur(28px) saturate(180%);
-          -webkit-backdrop-filter: blur(28px) saturate(180%);
+          background:
+            radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 76%), transparent 34%),
+            linear-gradient(145deg, rgb(255 255 255 / 72%), rgb(242 242 247 / 54%));
+          box-shadow:
+            0 18px 46px rgb(0 0 0 / 22%),
+            inset 0 1px 0 rgb(255 255 255 / 92%),
+            inset 0 -1px 0 rgb(255 255 255 / 28%);
+          backdrop-filter: blur(34px) saturate(190%) contrast(105%);
+          -webkit-backdrop-filter: blur(34px) saturate(190%) contrast(105%);
           animation: appear 160ms cubic-bezier(.2,.8,.2,1);
+          transition: box-shadow 180ms ease, transform 180ms cubic-bezier(.2,.8,.2,1);
         }
         .glass::before {
           position: absolute;
           inset: 0;
           border-radius: inherit;
           background:
-            radial-gradient(circle at 18% 0%, rgb(255 255 255 / 62%), transparent 42%),
+            radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 68%), transparent 38%),
             linear-gradient(110deg, transparent 35%, rgb(255 255 255 / 22%) 50%, transparent 66%);
+          content: "";
+          pointer-events: none;
+        }
+        .glass::after {
+          position: absolute;
+          inset: 1px;
+          border: 1px solid rgb(255 255 255 / 22%);
+          border-radius: 13px;
           content: "";
           pointer-events: none;
         }
@@ -121,7 +137,19 @@ export default defineContentScript({
           text-align: left;
           cursor: pointer;
         }
-        .option:hover, .option:focus-visible { outline: none; background: rgb(0 122 255 / 11%); }
+        .option {
+          transition:
+            background 140ms ease,
+            box-shadow 140ms ease,
+            transform 180ms cubic-bezier(.2,.8,.2,1);
+        }
+        .option:hover, .option:focus-visible {
+          outline: none;
+          background: linear-gradient(135deg, rgb(255 255 255 / 42%), rgb(0 122 255 / 13%));
+          box-shadow: inset 0 1px rgb(255 255 255 / 48%), 0 5px 14px rgb(0 87 255 / 9%);
+          transform: scale(1.012);
+        }
+        .option:active { transform: scale(.985); }
         .icon {
           display: grid;
           width: 30px;
@@ -183,6 +211,15 @@ export default defineContentScript({
       const panel = document.createElement("div");
       panel.className = "glass";
       panel.setAttribute("role", "dialog");
+      panel.addEventListener("pointermove", (event) => {
+        const bounds = panel.getBoundingClientRect();
+        panel.style.setProperty("--lens-x", `${event.clientX - bounds.left}px`);
+        panel.style.setProperty("--lens-y", `${event.clientY - bounds.top}px`);
+      });
+      panel.addEventListener("pointerleave", () => {
+        panel.style.setProperty("--lens-x", "24%");
+        panel.style.setProperty("--lens-y", "0%");
+      });
       const header = document.createElement("div");
       header.className = "header";
       const heading = document.createElement("strong");
