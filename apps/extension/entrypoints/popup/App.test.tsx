@@ -221,6 +221,60 @@ describe("extension popup", () => {
     expect(lock).toHaveBeenCalled();
   });
 
+  it("ends the biometric flow when the vault has no exact-origin login", async () => {
+    const locked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlocked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      itemCount: 1,
+      recovery: { status: "verified" },
+      status: "unlocked",
+      unlockedCompartments: [],
+      vaultId: "vault-id",
+    } as const;
+    const lock = vi.fn(() => locked);
+    const sendMessage = vi.fn();
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: async () => [
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "other-origin-login",
+          notes: "",
+          password: "must-not-be-released",
+          revisionId: "other-origin-revision",
+          title: "Other origin",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://other.example.test"],
+          username: "person@example.test",
+        },
+      ],
+      lock,
+      unlockWithDevice: vi.fn(async () => unlocked),
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+
+    expect(await screen.findByRole("heading", { name: "No saved login" })).toBeVisible();
+    expect(screen.getByText("No exact-origin password is saved for this page.")).toBeVisible();
+    expect(screen.getByText(/passwords are never reused across origins/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Try Touch ID Again" })).not.toBeInTheDocument();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(lock).toHaveBeenCalled();
+  });
+
   it("ignores a blank duplicate and automatically fills the only named login", async () => {
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },

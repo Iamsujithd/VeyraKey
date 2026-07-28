@@ -340,6 +340,7 @@ function AuthenticatedAutofill({
   const [useMasterPassword, setUseMasterPassword] = useState(target.method === "password");
   const [submitAfterFill] = useState(target.submitAfterFill ?? false);
   const [matches, setMatches] = useState<readonly LoginItem[]>([]);
+  const [noMatch, setNoMatch] = useState(false);
   const autoBiometricStarted = useRef(false);
   const authenticateWithDeviceRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
@@ -451,6 +452,7 @@ function AuthenticatedAutofill({
   const handleMatches = async (logins: readonly LoginItem[]) => {
     if (logins.length === 0) {
       setStatus("No exact-origin password is saved for this page.");
+      setNoMatch(true);
       relock();
     } else if (logins.length === 1) {
       const login = logins[0];
@@ -469,6 +471,7 @@ function AuthenticatedAutofill({
       return;
     }
     setBusy(true);
+    setNoMatch(false);
     setStatus("Waiting for Touch ID, Windows Hello, or your security key…");
     try {
       await client.unlockWithDevice(slot.id);
@@ -503,6 +506,7 @@ function AuthenticatedAutofill({
   const authenticateWithPassword = async (password: string) => {
     setManualPassword("");
     setBusy(true);
+    setNoMatch(false);
     setStatus("Unlocking the encrypted vault on this device…");
     try {
       await client.unlock(password);
@@ -525,12 +529,26 @@ function AuthenticatedAutofill({
           <span>
             <p className="eyebrow">Passwords</p>
             <h1 id="biometric-title">
-              {useMasterPassword ? "Enter master password" : "Touch ID to fill"}
+              {noMatch
+                ? "No saved login"
+                : useMasterPassword
+                  ? "Enter master password"
+                  : "Touch ID to fill"}
             </h1>
             <p className="biometric-host">{new URL(target.topUrl).hostname}</p>
           </span>
         </header>
-        {matches.length === 0 && useMasterPassword ? (
+        {noMatch ? (
+          <div className="biometric-verification">
+            <span className="biometric-pulse" aria-hidden="true">
+              —
+            </span>
+            <strong>Nothing to fill for this website</strong>
+            <p>
+              Save a login for this exact site first. Passwords are never reused across origins.
+            </p>
+          </div>
+        ) : matches.length === 0 && useMasterPassword ? (
           <form
             className="biometric-password-form"
             onSubmit={(event) => {

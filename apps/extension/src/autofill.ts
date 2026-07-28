@@ -96,6 +96,19 @@ function isInvalidatedExtensionContext(error: unknown): boolean {
   return error instanceof Error && /extension context invalidated/iu.test(error.message);
 }
 
+export function readExtensionRuntimeIdSafely(
+  read: () => unknown,
+  onContextInvalidated: () => void,
+): string | null {
+  try {
+    const id = read();
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch (error) {
+    if (isInvalidatedExtensionContext(error)) onContextInvalidated();
+    return null;
+  }
+}
+
 export async function sendRuntimeMessageSafely<T>(
   send: () => Promise<T>,
   onContextInvalidated: () => void,

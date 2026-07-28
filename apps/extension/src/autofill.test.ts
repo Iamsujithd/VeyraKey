@@ -24,12 +24,25 @@ import {
   parseCaptureRequest,
   parseManualAutofillRequest,
   parseUsernameObservedRequest,
+  readExtensionRuntimeIdSafely,
   sendRuntimeMessageSafely,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "./autofill";
 
 describe("extension automatic autofill", () => {
+  it("aborts cleanly when a content script starts during extension replacement", () => {
+    const invalidated = vi.fn();
+    expect(
+      readExtensionRuntimeIdSafely(() => {
+        throw new Error("Extension context invalidated.");
+      }, invalidated),
+    ).toBeNull();
+    expect(readExtensionRuntimeIdSafely(() => "", invalidated)).toBeNull();
+    expect(readExtensionRuntimeIdSafely(() => "extension-id", invalidated)).toBe("extension-id");
+    expect(invalidated).toHaveBeenCalledTimes(1);
+  });
+
   it("contains both synchronous and asynchronous extension-reload failures", async () => {
     const invalidated = vi.fn();
     await expect(

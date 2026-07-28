@@ -15,6 +15,7 @@ import {
   isUsernameField,
   MANUAL_AUTOFILL_REQUEST_TYPE,
   parseBiometricFillRequest,
+  readExtensionRuntimeIdSafely,
   sendRuntimeMessageSafely,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
@@ -32,8 +33,6 @@ export default defineContentScript({
     let queuedSuggestionAnchor: Element | null = null;
     let extensionContextActive = true;
     let observer: MutationObserver | null = null;
-    const extensionId = browser.runtime.id;
-
     const closePrompt = () => {
       promptCleanup?.();
       promptCleanup = null;
@@ -50,6 +49,11 @@ export default defineContentScript({
       observer?.disconnect();
       closePrompt();
     };
+    const extensionId = readExtensionRuntimeIdSafely(
+      () => browser.runtime.id,
+      invalidateExtensionContext,
+    );
+    if (extensionId === null) return;
     const sendMessage = <T>(message: unknown) =>
       sendRuntimeMessageSafely<T>(
         () => browser.runtime.sendMessage(message) as Promise<T>,
@@ -312,9 +316,9 @@ export default defineContentScript({
                 ...(response.deviceSlots.length > 0
                   ? [
                       {
-                        detail: "Fill without leaving Passwords unlocked",
+                        detail: "Check this exact site without leaving Passwords unlocked",
                         icon: "◎",
-                        label: "Use Touch ID or Biometrics",
+                        label: "Check Vault with Touch ID",
                         run: () => {
                           closePrompt();
                           void sendMessage({
@@ -328,9 +332,9 @@ export default defineContentScript({
                     ]
                   : []),
                 {
-                  detail: "Unlock once for this login",
+                  detail: "Check this exact site after unlocking",
                   icon: "●",
-                  label: "Enter Master Password",
+                  label: "Check Vault with Master Password",
                   run: () => {
                     closePrompt();
                     void sendMessage({
@@ -543,7 +547,7 @@ export default defineContentScript({
       },
       true,
     );
-    browser.runtime.onMessage.addListener((message, sender) => {
+    const fillListener = (message: unknown, sender: Browser.runtime.MessageSender) => {
       const request = parseBiometricFillRequest(message);
       if (
         request === null ||
@@ -557,7 +561,15 @@ export default defineContentScript({
       const submitted = filled && request.submit ? submitLoginForm(document) : false;
       closePrompt();
       return Promise.resolve({ filled, submitted });
-    });
+    };
+    if (
+      readExtensionRuntimeIdSafely(() => {
+        browser.runtime.onMessage.addListener(fillListener);
+        return extensionId;
+      }, invalidateExtensionContext) === null
+    ) {
+      return;
+    }
     let activeFieldCheckQueued = false;
     const checkActiveField = () => {
       activeFieldCheckQueued = false;
