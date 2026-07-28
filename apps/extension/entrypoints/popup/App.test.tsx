@@ -144,12 +144,12 @@ describe("extension popup", () => {
     );
 
     render(<App client={vaultClient} />);
-    const authenticate = await screen.findByRole("button", {
-      name: "Use Touch ID or Biometrics",
-    });
-    fireEvent.click(authenticate);
-
+    expect(await screen.findByRole("heading", { name: "Touch ID to fill" })).toBeVisible();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     await waitFor(() => expect(unlockWithDevice).toHaveBeenCalledWith("device-slot"));
+    expect(
+      screen.queryByRole("button", { name: "Use Touch ID or Biometrics" }),
+    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(7, {
         password: "synthetic-secret",
@@ -200,8 +200,6 @@ describe("extension popup", () => {
     );
 
     render(<App client={vaultClient} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Use Touch ID or Biometrics" }));
-
     expect(
       await screen.findByText(
         "Biometric verification was canceled or is unavailable on this device.",
@@ -229,7 +227,7 @@ describe("extension popup", () => {
     } as const;
     const unlock = vi.fn(async () => unlocked);
     const lock = vi.fn(() => locked);
-    const sendMessage = vi.fn(async () => ({ filled: true, submitted: true }));
+    const sendMessage = vi.fn(async () => ({ filled: true, submitted: false }));
     const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const vaultClient: VaultClient = {
       ...client(),
@@ -262,13 +260,13 @@ describe("extension popup", () => {
     render(<App client={vaultClient} />);
     const password = await screen.findByLabelText("Master password");
     fireEvent.change(password, { target: { value: "correct master password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Unlock and Fill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fill Password" }));
 
     await waitFor(() => expect(unlock).toHaveBeenCalledWith("correct master password"));
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(7, {
         password: "synthetic-secret",
-        submit: true,
+        submit: false,
         topUrl: "https://example.test/login",
         type: "zk-wallet.biometric-fill.v1",
         username: "person@example.test",
@@ -308,7 +306,7 @@ describe("extension popup", () => {
     render(<App client={vaultClient} />);
     const password = await screen.findByLabelText<HTMLInputElement>("Master password");
     fireEvent.change(password, { target: { value: "wrong master password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Unlock and Fill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fill Password" }));
 
     expect(await screen.findByText("Unable to unlock. Check the master password.")).toBeVisible();
     expect(password.value).toBe("");

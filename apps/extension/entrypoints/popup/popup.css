@@ -498,59 +498,43 @@ body::before {
   }
 }
 
+.autofill-document,
+.autofill-document body,
+.autofill-document #root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+}
+
+body.autofill-surface {
+  overflow: hidden;
+  background: rgb(242 242 247 / 94%);
+}
+
+body.autofill-surface::before {
+  display: none;
+}
+
 .biometric-shell {
   display: grid;
   min-height: 100vh;
-  padding: 18px;
+  padding: 10px;
   place-items: center;
 }
 
 .biometric-card {
-  position: relative;
   display: grid;
-  width: min(100%, 380px);
-  gap: 14px;
-  padding: 26px 22px 20px;
-  overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 52%);
-  border-radius: 30px;
-  background: linear-gradient(145deg, rgb(255 255 255 / 84%), rgb(242 242 247 / 68%));
+  width: 100%;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 72%);
   box-shadow:
-    0 24px 62px rgb(35 38 58 / 24%),
-    inset 0 1px rgb(255 255 255 / 82%);
-  text-align: center;
-  backdrop-filter: blur(30px) saturate(170%);
-  -webkit-backdrop-filter: blur(30px) saturate(170%);
-}
-
-.biometric-card::before {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 18% 0%, rgb(255 255 255 / 36%), transparent 40%),
-    linear-gradient(115deg, transparent 34%, rgb(255 255 255 / 14%) 50%, transparent 66%);
-  content: "";
-  pointer-events: none;
-}
-
-.biometric-card > * {
-  position: relative;
-}
-
-.biometric-symbol {
-  display: grid;
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 2px;
-  place-items: center;
-  border-radius: 20px;
-  color: white;
-  background: linear-gradient(145deg, #64d2ff, #0a84ff 58%, #5e5ce6);
-  box-shadow:
-    inset 0 1px rgb(255 255 255 / 48%),
-    0 12px 28px rgb(10 132 255 / 28%);
-  font-size: 34px;
-  font-weight: 300;
+    0 12px 32px rgb(0 0 0 / 15%),
+    inset 0 1px rgb(255 255 255 / 86%);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
 }
 
 .biometric-card .eyebrow,
@@ -559,110 +543,163 @@ body::before {
   margin: 0;
 }
 
+.biometric-header {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.biometric-symbol {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  color: white;
+  background: linear-gradient(145deg, #64d2ff, #0a84ff 58%, #5e5ce6);
+  box-shadow: inset 0 1px rgb(255 255 255 / 48%);
+  font-size: 22px;
+  font-weight: 300;
+}
+
+.biometric-card .eyebrow {
+  color: #0878e8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .biometric-card h1 {
-  font-size: 25px;
-  letter-spacing: -0.04em;
+  margin-top: 1px;
+  font-size: 16px;
+  letter-spacing: -0.025em;
 }
 
 .biometric-host {
-  color: #0878e8;
-  font-size: 14px;
-  font-weight: 650;
+  margin-top: 1px;
+  overflow: hidden;
+  color: rgb(60 60 67 / 62%);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.biometric-copy,
-.biometric-status {
-  color: rgb(60 60 67 / 68%);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.biometric-toggle {
-  display: flex;
-  min-height: 44px;
+.biometric-verification {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 13px;
-  border-radius: 14px;
+  gap: 8px;
+  min-height: 46px;
+  padding: 7px 8px;
+  border-radius: 13px;
   background: rgb(118 118 128 / 9%);
-  font-size: 13px;
-  font-weight: 600;
 }
 
-.biometric-toggle input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: #0a84ff;
+.biometric-verification strong {
+  font-size: 12px;
+  text-align: left;
+}
+
+.biometric-pulse {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: #0878e8;
+  background: rgb(0 122 255 / 10%);
+  font-size: 20px;
+}
+
+.biometric-pulse.is-active {
+  animation: biometric-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes biometric-pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgb(10 132 255 / 12%);
+    transform: scale(1.04);
+  }
 }
 
 .biometric-action,
 .biometric-accounts button {
-  min-height: 50px;
+  min-height: 36px;
+  padding: 7px 11px;
   border: 0;
-  border-radius: 15px;
+  border-radius: 11px;
   color: white;
   background: linear-gradient(135deg, #0a84ff, #5e5ce6);
   box-shadow: inset 0 1px rgb(255 255 255 / 36%);
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.biometric-actions,
-.biometric-password-form {
-  display: grid;
-  gap: 9px;
+.biometric-verification .biometric-action {
+  grid-column: 1 / -1;
+}
+
+.biometric-fallback {
+  padding-inline: 8px;
+  white-space: nowrap;
 }
 
 .biometric-password-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
   text-align: left;
 }
 
 .biometric-password-form label {
-  padding-inline: 3px;
-  font-size: 12px;
-  font-weight: 650;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .biometric-password-form input {
   width: 100%;
-  min-height: 46px;
-  padding: 10px 12px;
+  min-height: 38px;
+  padding: 8px 10px;
   border: 1px solid rgb(60 60 67 / 18%);
-  border-radius: 13px;
+  border-radius: 11px;
   color: inherit;
-  background: rgb(255 255 255 / 68%);
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 5%);
+  background: rgb(255 255 255 / 72%);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .biometric-password-form input:focus-visible {
   border-color: #0a84ff;
   outline: 0;
-  box-shadow: 0 0 0 3px rgb(10 132 255 / 18%);
+  box-shadow: 0 0 0 3px rgb(10 132 255 / 16%);
+}
+
+.biometric-password-switch {
+  grid-column: 1 / -1;
 }
 
 .biometric-switch {
-  min-height: 40px;
+  min-height: 30px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 9px;
   color: #0878e8;
-  background: rgb(0 122 255 / 8%);
+  background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
 
-.biometric-switch:disabled {
-  cursor: wait;
-  opacity: 0.58;
-}
-
+.biometric-switch:disabled,
 .biometric-action:disabled,
 .biometric-accounts button:disabled {
   cursor: wait;
@@ -671,7 +708,7 @@ body::before {
 
 .biometric-accounts {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -688,33 +725,40 @@ body::before {
 
 .biometric-accounts button {
   display: grid;
-  gap: 2px;
-  padding: 9px 14px;
+  gap: 1px;
   text-align: left;
 }
 
 .biometric-accounts span {
   color: rgb(255 255 255 / 74%);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
 }
 
 .biometric-status {
-  min-height: 38px;
+  min-height: 16px;
+  color: rgb(60 60 67 / 64%);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
 }
 
 .biometric-cancel {
-  min-height: 36px;
+  min-height: 24px;
   border: 0;
   color: #0878e8;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
 
 @media (prefers-color-scheme: dark) {
+  body.autofill-surface {
+    background: rgb(28 28 30 / 96%);
+  }
+
   .biometric-card {
     border-color: rgb(255 255 255 / 14%);
     background: linear-gradient(145deg, rgb(52 52 56 / 86%), rgb(28 28 30 / 72%));
@@ -723,12 +767,11 @@ body::before {
       inset 0 1px rgb(255 255 255 / 12%);
   }
 
-  .biometric-copy,
   .biometric-status {
     color: rgb(235 235 245 / 62%);
   }
 
-  .biometric-toggle {
+  .biometric-verification {
     background: rgb(255 255 255 / 8%);
   }
 
@@ -739,12 +782,14 @@ body::before {
 
   .biometric-switch {
     color: #64a8ff;
-    background: rgb(10 132 255 / 14%);
   }
 
-  .biometric-host,
   .biometric-cancel {
     color: #64a8ff;
+  }
+
+  .biometric-host {
+    color: rgb(235 235 245 / 58%);
   }
 }
 

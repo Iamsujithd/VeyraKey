@@ -164,16 +164,15 @@ export default defineBackground(() => {
         }
         const targetUrl = new URL(authenticatedAutofill.topUrl);
         const popupUrl = new URL(browser.runtime.getURL("/popup.html"));
-        popupUrl.searchParams.set(
-          "mode",
+        const mode =
           authenticatedSelection === null
             ? biometricAutofill === null
               ? "manual-autofill"
               : "biometric-autofill"
             : authenticatedSelection.method === "biometric"
               ? "biometric-autofill"
-              : "manual-autofill",
-        );
+              : "manual-autofill";
+        popupUrl.searchParams.set("mode", mode);
         popupUrl.searchParams.set("tabId", String(sender.tab.id));
         popupUrl.searchParams.set("topUrl", targetUrl.href);
         if (authenticatedSelection !== null) {
@@ -182,10 +181,10 @@ export default defineBackground(() => {
         }
         await browser.windows.create({
           focused: true,
-          height: 650,
+          height: mode === "biometric-autofill" ? 270 : 320,
           type: "popup",
           url: popupUrl.href,
-          width: 430,
+          width: 360,
         });
         return { status: "opening-authentication", version: 1 };
       }

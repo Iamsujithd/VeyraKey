@@ -11,7 +11,7 @@ import {
 } from "@zk-wallet/security";
 import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
 import { createVaultService, type LoginItem, type VaultPublicState } from "@zk-wallet/vault";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BIOMETRIC_FILL_TYPE } from "../../src/autofill";
 import { withExtensionGoogleDriveSync } from "../../src/googleDrive";
 import {
@@ -309,9 +309,20 @@ function AuthenticatedAutofill({
   const [busy, setBusy] = useState(false);
   const [manualPassword, setManualPassword] = useState("");
   const [useMasterPassword, setUseMasterPassword] = useState(target.method === "password");
-  const [submitAfterFill, setSubmitAfterFill] = useState(target.submitAfterFill ?? true);
+  const [submitAfterFill] = useState(target.submitAfterFill ?? false);
   const [matches, setMatches] = useState<readonly LoginItem[]>([]);
+  const autoBiometricStarted = useRef(false);
+  const authenticateWithDeviceRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
+
+  useEffect(() => {
+    document.documentElement.classList.add("autofill-document");
+    document.body.classList.add("autofill-surface");
+    return () => {
+      document.documentElement.classList.remove("autofill-document");
+      document.body.classList.remove("autofill-surface");
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -424,6 +435,25 @@ function AuthenticatedAutofill({
       setBusy(false);
     }
   };
+  authenticateWithDeviceRef.current = authenticateWithDevice;
+
+  useEffect(() => {
+    if (
+      target.method !== "biometric" ||
+      state.status === "preparing" ||
+      useMasterPassword ||
+      autoBiometricStarted.current
+    ) {
+      return;
+    }
+    autoBiometricStarted.current = true;
+    if (slots.length === 0) {
+      setStatus("Biometrics are unavailable. Enter your master password instead.");
+      setUseMasterPassword(true);
+      return;
+    }
+    void authenticateWithDeviceRef.current();
+  }, [state.status, target.method, useMasterPassword, slots.length]);
 
   const authenticateWithPassword = async (password: string) => {
     setManualPassword("");
@@ -443,24 +473,18 @@ function AuthenticatedAutofill({
   return (
     <main className="biometric-shell">
       <section className="biometric-card" aria-labelledby="biometric-title">
-        <span className="biometric-symbol" aria-hidden="true">
-          ◎
-        </span>
-        <p className="eyebrow">Passwords</p>
-        <h1 id="biometric-title">Unlock to AutoFill</h1>
-        <p className="biometric-host">{new URL(target.topUrl).hostname}</p>
-        <p className="biometric-copy">
-          Only the exact matching password is released. The vault relocks immediately after filling.
-        </p>
-        <label className="biometric-toggle">
-          <input
-            checked={submitAfterFill}
-            disabled={busy}
-            onChange={(event) => setSubmitAfterFill(event.target.checked)}
-            type="checkbox"
-          />
-          <span>Fill and press Sign In</span>
-        </label>
+        <header className="biometric-header">
+          <span className="biometric-symbol" aria-hidden="true">
+            ◎
+          </span>
+          <span>
+            <p className="eyebrow">Passwords</p>
+            <h1 id="biometric-title">
+              {useMasterPassword ? "Enter master password" : "Touch ID to fill"}
+            </h1>
+            <p className="biometric-host">{new URL(target.topUrl).hostname}</p>
+          </span>
+        </header>
         {matches.length === 0 && useMasterPassword ? (
           <form
             className="biometric-password-form"
@@ -484,43 +508,52 @@ function AuthenticatedAutofill({
               disabled={busy || state.status === "preparing" || manualPassword.length === 0}
               type="submit"
             >
-              {busy ? "Unlocking…" : "Unlock and Fill"}
+              {busy ? "Verifying…" : "Fill Password"}
             </button>
             {slots.length > 0 ? (
               <button
-                className="biometric-switch"
+                className="biometric-switch biometric-password-switch"
                 disabled={busy}
                 onClick={() => {
                   setManualPassword("");
+                  autoBiometricStarted.current = false;
                   setUseMasterPassword(false);
-                  setStatus("Confirm your identity to release one matching password.");
+                  setStatus("Touch the biometric sensor to fill.");
                 }}
                 type="button"
               >
-                Use Touch ID or Biometrics
+                Use Touch ID
               </button>
             ) : null}
           </form>
         ) : matches.length === 0 ? (
-          <div className="biometric-actions">
-            <button
-              className="biometric-action"
-              disabled={busy || state.status === "preparing"}
-              onClick={() => void authenticateWithDevice()}
-              type="button"
+          <div className="biometric-verification">
+            <span
+              className={busy ? "biometric-pulse is-active" : "biometric-pulse"}
+              aria-hidden="true"
             >
-              {busy ? "Verifying…" : "Use Touch ID or Biometrics"}
-            </button>
+              ◎
+            </span>
+            <strong>{busy ? "Touch the sensor" : "Biometric verification"}</strong>
+            {!busy && state.status !== "preparing" ? (
+              <button
+                className="biometric-action"
+                onClick={() => void authenticateWithDevice()}
+                type="button"
+              >
+                Try Touch ID Again
+              </button>
+            ) : null}
             <button
-              className="biometric-switch"
+              className="biometric-switch biometric-fallback"
               disabled={busy}
               onClick={() => {
                 setUseMasterPassword(true);
-                setStatus("Enter your master password in this protected extension window.");
+                setStatus("Enter your master password to fill this credential.");
               }}
               type="button"
             >
-              Enter Master Password
+              Use Master Password
             </button>
           </div>
         ) : (
