@@ -501,9 +501,9 @@ body::before {
 .autofill-document,
 .autofill-document body,
 .autofill-document #root {
-  width: 100%;
+  width: 360px;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
 }
 
 body.autofill-surface {
@@ -517,7 +517,7 @@ body.autofill-surface::before {
 
 .biometric-shell {
   display: grid;
-  min-height: 100vh;
+  min-height: 0;
   padding: 10px;
   place-items: center;
 }

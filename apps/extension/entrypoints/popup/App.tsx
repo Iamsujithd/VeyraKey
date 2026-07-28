@@ -318,11 +318,15 @@ function AuthenticatedAutofill({
   useEffect(() => {
     document.documentElement.classList.add("autofill-document");
     document.body.classList.add("autofill-surface");
+    void browser.action?.setPopup({
+      popup: "popup.html",
+      tabId: target.tabId,
+    });
     return () => {
       document.documentElement.classList.remove("autofill-document");
       document.body.classList.remove("autofill-surface");
     };
-  }, []);
+  }, [target.tabId]);
 
   useEffect(() => {
     let active = true;

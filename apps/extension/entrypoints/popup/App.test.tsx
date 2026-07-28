@@ -211,6 +211,80 @@ describe("extension popup", () => {
     expect(lock).toHaveBeenCalled();
   });
 
+  it("fills the account clicked after biometric verification finds multiple matches", async () => {
+    const locked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlocked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      itemCount: 2,
+      recovery: { status: "verified" },
+      status: "unlocked",
+      unlockedCompartments: [],
+      vaultId: "vault-id",
+    } as const;
+    const sendMessage = vi.fn(async () => ({ filled: true, submitted: false }));
+    const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    const lock = vi.fn(() => locked);
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: async () => [
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "saved-login",
+          notes: "",
+          password: "first-secret",
+          revisionId: "first-revision",
+          title: "Saved login",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://example.test"],
+          username: "",
+        },
+        {
+          createdAt: "2026-07-27T00:00:00.000Z",
+          id: "student-login",
+          notes: "",
+          password: "student-secret",
+          revisionId: "student-revision",
+          title: "Student",
+          type: "login",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          uris: ["https://example.test"],
+          username: "student",
+        },
+      ],
+      lock,
+      unlockWithDevice: vi.fn(async () => unlocked),
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+    fireEvent.click(await screen.findByRole("button", { name: /student.*Fill this account/u }));
+
+    await waitFor(() =>
+      expect(sendMessage).toHaveBeenCalledWith(7, {
+        password: "student-secret",
+        submit: false,
+        topUrl: "https://example.test/login",
+        type: "zk-wallet.biometric-fill.v1",
+        username: "student",
+        version: 1,
+      }),
+    );
+    expect(lock).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+  });
+
   it("fills after master-password entry in the protected extension page and relocks", async () => {
     const locked = {
       deviceUnlock: { available: false, slots: [] },

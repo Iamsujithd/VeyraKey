@@ -179,13 +179,26 @@ export default defineBackground(() => {
           popupUrl.searchParams.set("credentialId", authenticatedSelection.credentialId);
           popupUrl.searchParams.set("submit", String(authenticatedSelection.submit));
         }
-        await browser.windows.create({
-          focused: true,
-          height: mode === "biometric-autofill" ? 270 : 320,
-          type: "popup",
-          url: popupUrl.href,
-          width: 360,
+        const popupPath = `${popupUrl.pathname.replace(/^\/+/u, "")}${popupUrl.search}`;
+        await browser.action.setPopup({
+          popup: popupPath,
+          tabId: sender.tab.id,
         });
+        try {
+          await browser.action.openPopup({
+            ...(sender.tab.windowId === undefined ? {} : { windowId: sender.tab.windowId }),
+          });
+        } catch {
+          // Chrome before 127 and browsers without programmatic action popups retain
+          // the isolated extension-window fallback.
+          await browser.windows.create({
+            focused: true,
+            height: mode === "biometric-autofill" ? 270 : 320,
+            type: "popup",
+            url: popupUrl.href,
+            width: 360,
+          });
+        }
         return { status: "opening-authentication", version: 1 };
       }
 
