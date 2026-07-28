@@ -79,8 +79,6 @@ export default defineContentScript({
       styles.textContent = `
         * { box-sizing: border-box; }
         .glass {
-          --lens-x: 24%;
-          --lens-y: 0%;
           position: relative;
           overflow: hidden;
           padding: 7px;
@@ -88,7 +86,6 @@ export default defineContentScript({
           border-radius: 14px;
           color: #151517;
           background:
-            radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 76%), transparent 34%),
             linear-gradient(145deg, rgb(255 255 255 / 72%), rgb(242 242 247 / 54%));
           box-shadow:
             0 18px 46px rgb(0 0 0 / 22%),
@@ -104,7 +101,6 @@ export default defineContentScript({
           inset: 0;
           border-radius: inherit;
           background:
-            radial-gradient(circle at var(--lens-x) var(--lens-y), rgb(255 255 255 / 68%), transparent 38%),
             linear-gradient(110deg, transparent 35%, rgb(255 255 255 / 22%) 50%, transparent 66%);
           content: "";
           pointer-events: none;
@@ -211,15 +207,6 @@ export default defineContentScript({
       const panel = document.createElement("div");
       panel.className = "glass";
       panel.setAttribute("role", "dialog");
-      panel.addEventListener("pointermove", (event) => {
-        const bounds = panel.getBoundingClientRect();
-        panel.style.setProperty("--lens-x", `${event.clientX - bounds.left}px`);
-        panel.style.setProperty("--lens-y", `${event.clientY - bounds.top}px`);
-      });
-      panel.addEventListener("pointerleave", () => {
-        panel.style.setProperty("--lens-x", "24%");
-        panel.style.setProperty("--lens-y", "0%");
-      });
       const header = document.createElement("div");
       header.className = "header";
       const heading = document.createElement("strong");

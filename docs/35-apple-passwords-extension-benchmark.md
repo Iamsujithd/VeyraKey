@@ -78,7 +78,8 @@ principles as follows:
 | Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
 | Touch ID, Windows Hello, or security-key vault unlock | Implemented through capability-gated WebAuthn PRF; an intentional credential selection opens a compact sheet and starts verification immediately |
 | Multi-account recommendation | Automatically resolves a unique exact username observed on the page and ignores blank malformed duplicates when a usable named login exists; genuinely ambiguous named accounts still require explicit selection |
-| Liquid Glass-inspired interaction | A single floating functional layer uses adaptive tint, pointer-responsive lensing, depth, selective blue tint, and reduced-transparency/motion fallbacks; Chrome CSS cannot invoke Apple's proprietary system material |
+| Locked username recommendations | A validated local-only index exposes credential ID, username, and exact HTTPS origin to the trusted extension context so the inline picker can show accounts before password release; it contains no password and never syncs to cloud storage |
+| Liquid Glass-inspired interaction | A single floating functional layer uses live backdrop blur, restrained static edge highlights, depth, selective blue tint, and reduced-transparency/motion fallbacks; pointer-following spotlight effects are intentionally excluded and Chrome CSS cannot invoke Apple's proprietary system material |
 | Biometric exact-origin AutoFill | Implemented as a fresh ceremony for every credential release, including while the manager session is already unlocked |
 | Master-password AutoFill while the manager stays locked | Implemented in a protected extension-origin sheet that clears the submitted password and relocks after filling |
 | Autofocused and replaced multi-step login fields | Implemented through focus, pointer, page-restore, visibility, and DOM-replacement observation |

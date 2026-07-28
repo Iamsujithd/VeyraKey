@@ -13,6 +13,7 @@ import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
 import { createVaultService, type LoginItem, type VaultPublicState } from "@zk-wallet/vault";
 import { useEffect, useRef, useState } from "react";
 import { BIOMETRIC_FILL_TYPE } from "../../src/autofill";
+import { writeAutofillMetadataIndex } from "../../src/autofillIndex";
 import { withExtensionGoogleDriveSync } from "../../src/googleDrive";
 import {
   ExtensionSessionCoordinator,
@@ -250,7 +251,20 @@ function createLocalVaultClient(): VaultClient {
       setAccessLevel: (options) => browser.storage.session.setAccessLevel(options),
     },
   });
-  return withExtensionSession(withExtensionGoogleDriveSync(client, crypto), coordinator);
+  const coordinated = withExtensionSession(
+    withExtensionGoogleDriveSync(client, crypto),
+    coordinator,
+  );
+  if (coordinated.listItems === undefined) return coordinated;
+  return {
+    ...coordinated,
+    async listItems() {
+      const items = await coordinated.listItems?.();
+      if (items === undefined) return [];
+      await writeAutofillMetadataIndex(items, browser.storage.local);
+      return items;
+    },
+  };
 }
 
 interface AuthenticatedAutofillTarget {
@@ -409,7 +423,11 @@ function AuthenticatedAutofill({
     if (client.listItems === undefined) {
       throw new Error("Encrypted login access is unavailable");
     }
-    const matching = (await client.listItems()).filter(
+    const items = await client.listItems();
+    if (browser.storage?.local !== undefined) {
+      await writeAutofillMetadataIndex(items, browser.storage.local);
+    }
+    const matching = items.filter(
       (item): item is LoginItem =>
         item.type === "login" &&
         (target.credentialId === undefined || item.id === target.credentialId) &&
@@ -499,19 +517,7 @@ function AuthenticatedAutofill({
 
   return (
     <main className="biometric-shell">
-      <section
-        className="biometric-card"
-        aria-labelledby="biometric-title"
-        onPointerLeave={(event) => {
-          event.currentTarget.style.setProperty("--lens-x", "22%");
-          event.currentTarget.style.setProperty("--lens-y", "0%");
-        }}
-        onPointerMove={(event) => {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          event.currentTarget.style.setProperty("--lens-x", `${event.clientX - bounds.left}px`);
-          event.currentTarget.style.setProperty("--lens-y", `${event.clientY - bounds.top}px`);
-        }}
-      >
+      <section className="biometric-card" aria-labelledby="biometric-title">
         <header className="biometric-header">
           <span className="biometric-symbol" aria-hidden="true">
             ◎

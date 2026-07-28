@@ -21,6 +21,7 @@ import {
   parseManualAutofillRequest,
   parseUsernameObservedRequest,
 } from "../src/autofill";
+import { readAutofillMetadataIndex, writeAutofillMetadataIndex } from "../src/autofillIndex";
 import { ExtensionSessionCoordinator } from "../src/session";
 
 export default defineBackground(() => {
@@ -119,7 +120,9 @@ export default defineBackground(() => {
     }
     if (service.getState().status !== "unlocked" || service.listItems === undefined) return null;
     try {
-      return (await service.listItems()).filter((item): item is LoginItem => item.type === "login");
+      const items = await service.listItems();
+      await writeAutofillMetadataIndex(items, browser.storage.local);
+      return items.filter((item): item is LoginItem => item.type === "login");
     } catch {
       return null;
     }
@@ -221,6 +224,19 @@ export default defineBackground(() => {
         const logins = await unlockedLogins();
         if (logins === null) {
           const state = service.getState();
+          const origin = new URL(autofill.topUrl).origin;
+          const indexed = (await readAutofillMetadataIndex(browser.storage.local)).filter((entry) =>
+            entry.origins.includes(origin),
+          );
+          if (indexed.length > 0) {
+            return {
+              credentials: indexed.map(({ id, username }) => ({ id, username })),
+              deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
+              displayHost: new URL(autofill.topUrl).hostname,
+              status: "suggestions",
+              version: 1,
+            };
+          }
           return {
             deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
             status: "locked",
@@ -342,6 +358,7 @@ export default defineBackground(() => {
             username: pending.username,
           });
         }
+        await unlockedLogins();
         return { action: decision.action, status: "saved", version: 1 };
       }
 
