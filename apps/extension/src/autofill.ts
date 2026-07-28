@@ -92,6 +92,13 @@ export type CaptureResponse =
     }
   | { readonly action: "save" | "update"; readonly status: "saved"; readonly version: 1 };
 
+export function preferNamedCredentials<T extends { readonly username: string }>(
+  credentials: readonly T[],
+): readonly T[] {
+  const named = credentials.filter((credential) => credential.username.trim().length > 0);
+  return named.length > 0 ? named : credentials;
+}
+
 function isInvalidatedExtensionContext(error: unknown): boolean {
   return error instanceof Error && /extension context invalidated/iu.test(error.message);
 }

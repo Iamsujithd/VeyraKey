@@ -20,6 +20,7 @@ import {
   parseCaptureRequest,
   parseManualAutofillRequest,
   parseUsernameObservedRequest,
+  preferNamedCredentials,
 } from "../src/autofill";
 import { readAutofillMetadataIndex, writeAutofillMetadataIndex } from "../src/autofillIndex";
 import { ExtensionSessionCoordinator } from "../src/session";
@@ -253,9 +254,10 @@ export default defineBackground(() => {
             }).allowed,
         );
         if (matching.length === 0) return { status: "no-match", version: 1 };
+        const candidates = preferNamedCredentials(matching);
         const state = service.getState();
         return {
-          credentials: matching.map((login) => ({ id: login.id, username: login.username })),
+          credentials: candidates.map((login) => ({ id: login.id, username: login.username })),
           deviceSlots: "deviceUnlock" in state ? state.deviceUnlock.slots : [],
           displayHost: new URL(autofill.topUrl).hostname,
           status: "suggestions",

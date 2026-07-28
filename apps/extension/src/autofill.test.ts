@@ -24,6 +24,7 @@ import {
   parseCaptureRequest,
   parseManualAutofillRequest,
   parseUsernameObservedRequest,
+  preferNamedCredentials,
   readExtensionRuntimeIdSafely,
   sendRuntimeMessageSafely,
   submitLoginForm,
@@ -31,6 +32,19 @@ import {
 } from "./autofill";
 
 describe("extension automatic autofill", () => {
+  it("suppresses blank legacy duplicates when a named account exists", () => {
+    expect(
+      preferNamedCredentials([
+        { id: "legacy", username: "   " },
+        { id: "student", username: "student" },
+      ]),
+    ).toEqual([{ id: "student", username: "student" }]);
+
+    expect(preferNamedCredentials([{ id: "legacy", username: "" }])).toEqual([
+      { id: "legacy", username: "" },
+    ]);
+  });
+
   it("aborts cleanly when a content script starts during extension replacement", () => {
     const invalidated = vi.fn();
     expect(

@@ -77,7 +77,7 @@ export default defineContentScript({
       const host = document.createElement("div");
       host.dataset.zkWalletUi = "true";
       host.style.cssText =
-        "all:initial;position:fixed;z-index:2147483647;width:min(300px,calc(100vw - 24px));font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;color-scheme:light dark";
+        "all:initial;position:fixed;z-index:2147483647;width:min(264px,calc(100vw - 24px));font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;color-scheme:light dark";
       const root = host.attachShadow({ mode: "closed" });
       const styles = document.createElement("style");
       styles.textContent = `
@@ -85,9 +85,9 @@ export default defineContentScript({
         .glass {
           position: relative;
           overflow: hidden;
-          padding: 7px;
+          padding: 5px;
           border: 1px solid rgb(255 255 255 / 72%);
-          border-radius: 14px;
+          border-radius: 13px;
           color: #151517;
           background:
             linear-gradient(145deg, rgb(255 255 255 / 72%), rgb(242 242 247 / 54%));
@@ -113,25 +113,25 @@ export default defineContentScript({
           position: absolute;
           inset: 1px;
           border: 1px solid rgb(255 255 255 / 22%);
-          border-radius: 13px;
+          border-radius: 12px;
           content: "";
           pointer-events: none;
         }
         .header, .option, .dismiss { position: relative; z-index: 1; }
-        .header { display: grid; gap: 1px; padding: 4px 7px 7px; }
+        .header { display: grid; gap: 0; padding: 3px 6px 5px; }
         .title { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: -.01em; }
-        .subtitle { margin: 0; color: rgb(60 60 67 / 68%); font-size: 11px; line-height: 1.35; }
+        .subtitle { margin: 0; color: rgb(60 60 67 / 68%); font-size: 10px; line-height: 1.3; }
         .option {
           display: grid;
           width: 100%;
-          grid-template-columns: 30px 1fr 14px;
+          grid-template-columns: 26px 1fr 12px;
           align-items: center;
-          gap: 9px;
-          min-height: 46px;
+          gap: 7px;
+          min-height: 38px;
           margin: 0;
-          padding: 6px 8px;
+          padding: 4px 6px;
           border: 0;
-          border-radius: 12px;
+          border-radius: 10px;
           color: inherit;
           background: transparent;
           text-align: left;
@@ -152,14 +152,14 @@ export default defineContentScript({
         .option:active { transform: scale(.985); }
         .icon {
           display: grid;
-          width: 30px;
-          height: 30px;
+          width: 26px;
+          height: 26px;
           place-items: center;
-          border-radius: 9px;
+          border-radius: 8px;
           color: white;
           background: linear-gradient(145deg, #5ac8fa, #0a84ff 58%, #5e5ce6);
           box-shadow: inset 0 1px rgb(255 255 255 / 45%), 0 4px 12px rgb(0 122 255 / 18%);
-          font-size: 14px;
+          font-size: 12px;
           font-weight: 700;
         }
         .copy { min-width: 0; }
@@ -170,14 +170,14 @@ export default defineContentScript({
           white-space: nowrap;
         }
         .label { font-size: 12px; font-weight: 650; }
-        .detail { margin-top: 2px; color: rgb(60 60 67 / 62%); font-size: 11px; }
-        .chevron { color: rgb(60 60 67 / 42%); font-size: 18px; font-weight: 400; }
+        .detail { margin-top: 1px; color: rgb(60 60 67 / 62%); font-size: 10px; }
+        .chevron { color: rgb(60 60 67 / 42%); font-size: 16px; font-weight: 400; }
         .dismiss {
           width: 100%;
-          min-height: 34px;
-          margin-top: 3px;
+          min-height: 28px;
+          margin-top: 1px;
           border: 0;
-          border-radius: 10px;
+          border-radius: 8px;
           color: #007aff;
           background: transparent;
           font-size: 12px;
@@ -351,42 +351,24 @@ export default defineContentScript({
             return;
           }
           if (response?.status !== "suggestions") return;
-          const authenticateAndFill = (credentialId: string, submit: boolean) => {
+          const authenticateAndFill = (credentialId: string) => {
             closePrompt();
             void sendMessage({
               credentialId,
               method: response.deviceSlots.length > 0 ? "biometric" : "password",
-              submit,
+              submit: false,
               topUrl: location.href,
               type: AUTHENTICATED_AUTOFILL_SELECT_TYPE,
               userInitiated: true,
               version: 1,
             });
           };
-          const options = response.credentials.flatMap((credential) => [
-            {
-              detail:
-                response.deviceSlots.length > 0
-                  ? "Verify with biometrics, then fill"
-                  : "Confirm master password, then fill",
-              icon: response.deviceSlots.length > 0 ? "◎" : "●",
-              label: credential.username || "Saved login",
-              run: () => authenticateAndFill(credential.id, false),
-            },
-            ...(response.credentials.length === 1
-              ? [
-                  {
-                    detail:
-                      response.deviceSlots.length > 0
-                        ? "Verify, fill, and press Sign In"
-                        : "Confirm, fill, and press Sign In",
-                    icon: "→",
-                    label: `Sign in as ${credential.username || "saved login"}`,
-                    run: () => authenticateAndFill(credential.id, true),
-                  },
-                ]
-              : []),
-          ]);
+          const options = response.credentials.map((credential) => ({
+            detail: response.deviceSlots.length > 0 ? "Touch ID required" : "Vault unlock required",
+            icon: response.deviceSlots.length > 0 ? "◎" : "●",
+            label: credential.username || "Saved login",
+            run: () => authenticateAndFill(credential.id),
+          }));
           prompt("suggestions", "Passwords", response.displayHost, options, anchor);
         })
         .finally(() => {
