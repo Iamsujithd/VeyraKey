@@ -307,22 +307,14 @@ export function loginFields(document: Document): {
       input.getAttribute("aria-hidden") !== "true",
   );
   const password = inputs.find(
-    (input) =>
-      input.type === "password" &&
-      input.autocomplete !== "new-password" &&
-      input.value.length === 0,
+    (input) => input.type === "password" && input.autocomplete !== "new-password",
   );
   if (password === undefined) return null;
   const formInputs =
     password.form === null ? inputs : inputs.filter((input) => input.form === password.form);
   const username =
-    formInputs.find(
-      (input) => input.value.length === 0 && ["email", "username"].includes(input.autocomplete),
-    ) ??
-    formInputs.find(
-      (input) =>
-        input.value.length === 0 && ["email", "text"].includes(input.type) && input !== password,
-    );
+    formInputs.find((input) => ["email", "username"].includes(input.autocomplete)) ??
+    formInputs.find((input) => ["email", "text"].includes(input.type) && input !== password);
   return { password, ...(username === undefined ? {} : { username }) };
 }
 
@@ -332,13 +324,24 @@ export function fillLoginFields(
 ): boolean {
   const fields = loginFields(document);
   if (fields === null) return false;
+  if (fields.password.value.length > 0 && fields.password.value !== credential.password)
+    return false;
+  if (
+    fields.username !== undefined &&
+    fields.username.value.length > 0 &&
+    fields.username.value !== credential.username
+  ) {
+    return false;
+  }
   const setValue = (input: HTMLInputElement, value: string) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   };
-  if (fields.username !== undefined) setValue(fields.username, credential.username);
-  setValue(fields.password, credential.password);
+  if (fields.username !== undefined && fields.username.value.length === 0) {
+    setValue(fields.username, credential.username);
+  }
+  if (fields.password.value.length === 0) setValue(fields.password, credential.password);
   return true;
 }
 

@@ -146,6 +146,71 @@ await evaluate(
   activePageSession,
   `(() => {
     const form = document.createElement("form");
+    form.id = "zk-runtime-idempotent-fill";
+    const username = document.createElement("input");
+    username.type = "email";
+    username.autocomplete = "username";
+    const password = document.createElement("input");
+    password.type = "password";
+    password.autocomplete = "current-password";
+    form.append(username, password);
+    document.body.append(form);
+    globalThis.__zkRuntimeInputEvents = 0;
+    form.addEventListener("input", () => {
+      globalThis.__zkRuntimeInputEvents += 1;
+    });
+  })()`,
+);
+const repeatedFillExpression = `chrome.tabs.sendMessage(${tabId}, {
+  password: "runtime-only-secret",
+  submit: false,
+  topUrl: ${JSON.stringify(fixtureUrl)},
+  type: "zk-wallet.biometric-fill.v1",
+  username: "runtime@example.com",
+  version: 1
+}).then(response => response?.filled === true, () => false)`;
+assert.equal(
+  await evaluate(workerSession, repeatedFillExpression),
+  true,
+  "First authenticated credential delivery was not acknowledged",
+);
+assert.equal(
+  await evaluate(workerSession, repeatedFillExpression),
+  true,
+  "Identical repeated credential delivery was not acknowledged",
+);
+const repeatedFillState = await evaluate(
+  activePageSession,
+  `(() => {
+    const form = document.querySelector("#zk-runtime-idempotent-fill");
+    const fields = form?.querySelectorAll("input");
+    return {
+      inputEvents: globalThis.__zkRuntimeInputEvents,
+      password: fields?.[1]?.value,
+      username: fields?.[0]?.value
+    };
+  })()`,
+);
+assert.deepEqual(
+  repeatedFillState,
+  {
+    inputEvents: 2,
+    password: "runtime-only-secret",
+    username: "runtime@example.com",
+  },
+  "Repeated credential delivery rewrote or failed to populate the login form",
+);
+await evaluate(
+  activePageSession,
+  `(() => {
+    document.querySelector("#zk-runtime-idempotent-fill")?.remove();
+    delete globalThis.__zkRuntimeInputEvents;
+  })()`,
+);
+await evaluate(
+  activePageSession,
+  `(() => {
+    const form = document.createElement("form");
     form.id = "zk-runtime-dynamic-login";
     const username = document.createElement("input");
     username.type = "email";
@@ -275,6 +340,7 @@ console.log(
     passed: [
       "extension loaded",
       "HTTPS content script injected",
+      "repeated credential delivery stayed idempotent",
       "dynamic username field opened Passwords",
       "replaced password step refreshed Passwords",
       "pending credential survived service-worker termination",

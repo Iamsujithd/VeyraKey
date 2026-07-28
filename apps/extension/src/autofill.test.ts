@@ -105,6 +105,24 @@ describe("extension automatic autofill", () => {
     expect(inputEvents).toBe(2);
   });
 
+  it("acknowledges an identical repeated delivery without rewriting the fields", () => {
+    document.body.innerHTML = `
+      <form>
+        <input autocomplete="username">
+        <input type="password" autocomplete="current-password">
+      </form>
+    `;
+    let inputEvents = 0;
+    document.addEventListener("input", () => {
+      inputEvents += 1;
+    });
+    const credential = { password: "secret", username: "person@example.test" };
+
+    expect(fillLoginFields(document, credential)).toBe(true);
+    expect(fillLoginFields(document, credential)).toBe(true);
+    expect(inputEvents).toBe(2);
+  });
+
   it("submits only one unambiguous filled login form after explicit selection", () => {
     document.body.innerHTML = `
       <form>
