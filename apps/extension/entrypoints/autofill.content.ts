@@ -17,6 +17,7 @@ import {
   parseBiometricFillRequest,
   readExtensionRuntimeIdSafely,
   sendRuntimeMessageSafely,
+  shouldDismissSuggestionsForUsername,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "../src/autofill";
@@ -29,6 +30,7 @@ export default defineContentScript({
     let promptAnchor: Element | null = null;
     let promptKind: "capture" | "suggestions" | null = null;
     let promptCleanup: (() => void) | null = null;
+    let promptUsernames: readonly string[] | null = null;
     let requestInProgress = false;
     let queuedSuggestionAnchor: Element | null = null;
     let extensionContextActive = true;
@@ -40,6 +42,7 @@ export default defineContentScript({
       promptHost = null;
       promptAnchor = null;
       promptKind = null;
+      promptUsernames = null;
     };
     const invalidateExtensionContext = () => {
       if (!extensionContextActive) return;
@@ -308,6 +311,7 @@ export default defineContentScript({
       })
         .then((response: AutofillResponse | undefined) => {
           if (response?.status === "locked") {
+            promptUsernames = null;
             prompt(
               "suggestions",
               "Passwords",
@@ -370,6 +374,7 @@ export default defineContentScript({
             run: () => authenticateAndFill(credential.id),
           }));
           prompt("suggestions", "Passwords", response.displayHost, options, anchor);
+          promptUsernames = response.credentials.map((credential) => credential.username);
         })
         .finally(() => {
           if (!extensionContextActive) return;
@@ -472,6 +477,23 @@ export default defineContentScript({
       });
     };
 
+    document.addEventListener(
+      "input",
+      (event) => {
+        if (
+          !event.isTrusted ||
+          promptKind !== "suggestions" ||
+          !(event.target instanceof HTMLInputElement) ||
+          !isUsernameField(event.target)
+        ) {
+          return;
+        }
+        if (shouldDismissSuggestionsForUsername(event.target.value, promptUsernames)) {
+          closePrompt();
+        }
+      },
+      true,
+    );
     document.addEventListener(
       "focusin",
       (event) => {

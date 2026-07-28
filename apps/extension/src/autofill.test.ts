@@ -27,6 +27,7 @@ import {
   preferNamedCredentials,
   readExtensionRuntimeIdSafely,
   sendRuntimeMessageSafely,
+  shouldDismissSuggestionsForUsername,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
 } from "./autofill";
@@ -43,6 +44,14 @@ describe("extension automatic autofill", () => {
     expect(preferNamedCredentials([{ id: "legacy", username: "" }])).toEqual([
       { id: "legacy", username: "" },
     ]);
+  });
+
+  it("dismisses suggestions only after a username diverges case-insensitively", () => {
+    expect(shouldDismissSuggestionsForUsername("", ["Practice"])).toBe(false);
+    expect(shouldDismissSuggestionsForUsername("PRA", ["Practice"])).toBe(false);
+    expect(shouldDismissSuggestionsForUsername("practice", ["Practice"])).toBe(false);
+    expect(shouldDismissSuggestionsForUsername("other", ["Practice"])).toBe(true);
+    expect(shouldDismissSuggestionsForUsername("typed", null)).toBe(true);
   });
 
   it("aborts cleanly when a content script starts during extension replacement", () => {
@@ -148,6 +157,21 @@ describe("extension automatic autofill", () => {
     expect(fillLoginFields(document, credential)).toBe(true);
     expect(fillLoginFields(document, credential)).toBe(true);
     expect(inputEvents).toBe(2);
+  });
+
+  it("accepts a case-insensitive username match without rewriting the user's value", () => {
+    document.body.innerHTML = `
+      <form>
+        <input autocomplete="username" value="PRACTICE">
+        <input type="password" autocomplete="current-password">
+      </form>
+    `;
+    const username = document.querySelector<HTMLInputElement>("[autocomplete=username]");
+    const password = document.querySelector<HTMLInputElement>("[type=password]");
+
+    expect(fillLoginFields(document, { password: "secret", username: "practice" })).toBe(true);
+    expect(username?.value).toBe("PRACTICE");
+    expect(password?.value).toBe("secret");
   });
 
   it("submits only one unambiguous filled login form after explicit selection", () => {

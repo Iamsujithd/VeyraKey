@@ -99,6 +99,20 @@ export function preferNamedCredentials<T extends { readonly username: string }>(
   return named.length > 0 ? named : credentials;
 }
 
+function normalizedUsername(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+export function shouldDismissSuggestionsForUsername(
+  value: string,
+  storedUsernames: readonly string[] | null,
+): boolean {
+  const typed = normalizedUsername(value);
+  if (typed.length === 0) return false;
+  if (storedUsernames === null) return true;
+  return !storedUsernames.some((username) => normalizedUsername(username).startsWith(typed));
+}
+
 function isInvalidatedExtensionContext(error: unknown): boolean {
   return error instanceof Error && /extension context invalidated/iu.test(error.message);
 }
@@ -349,7 +363,7 @@ export function fillLoginFields(
   if (
     fields.username !== undefined &&
     fields.username.value.length > 0 &&
-    fields.username.value !== credential.username
+    normalizedUsername(fields.username.value) !== normalizedUsername(credential.username)
   ) {
     return false;
   }
