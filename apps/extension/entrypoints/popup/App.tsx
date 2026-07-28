@@ -420,12 +420,14 @@ function AuthenticatedAutofill({
           userInitiated: true,
         }).allowed,
     );
-    if (target.credentialId !== undefined || target.usernameHint === undefined) return matching;
+    const named = matching.filter((item) => item.username.trim().length > 0);
+    const candidates = named.length > 0 ? named : matching;
+    if (target.credentialId !== undefined || target.usernameHint === undefined) return candidates;
     const normalizedHint = target.usernameHint.trim().toLocaleLowerCase();
-    const hinted = matching.filter(
+    const hinted = candidates.filter(
       (item) => item.username.trim().toLocaleLowerCase() === normalizedHint,
     );
-    return hinted.length === 1 ? hinted : matching;
+    return hinted.length === 1 ? hinted : candidates;
   };
 
   const handleMatches = async (logins: readonly LoginItem[]) => {

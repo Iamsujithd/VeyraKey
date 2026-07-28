@@ -207,7 +207,7 @@ export default defineBackground(() => {
             height: mode === "biometric-autofill" ? 270 : 320,
             type: "popup",
             url: popupUrl.href,
-            width: 360,
+            width: 300,
           });
         }
         return { status: "opening-authentication", version: 1 };

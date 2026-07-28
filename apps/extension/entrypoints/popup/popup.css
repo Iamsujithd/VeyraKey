@@ -501,7 +501,7 @@ body::before {
 .autofill-document,
 .autofill-document body,
 .autofill-document #root {
-  width: 360px;
+  width: 300px;
   min-width: 0;
   min-height: 0;
 }

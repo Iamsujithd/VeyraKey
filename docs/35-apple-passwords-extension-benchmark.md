@@ -77,7 +77,7 @@ principles as follows:
 | Password health checks | Implemented locally |
 | Native Safari/Apple AutoFill UI | Not available to Chrome extensions |
 | Touch ID, Windows Hello, or security-key vault unlock | Implemented through capability-gated WebAuthn PRF; an intentional credential selection opens a compact sheet and starts verification immediately |
-| Multi-account recommendation | Automatically resolves a unique exact username observed on the page; ambiguous accounts still require explicit selection, matching the no-guessing security model |
+| Multi-account recommendation | Automatically resolves a unique exact username observed on the page and ignores blank malformed duplicates when a usable named login exists; genuinely ambiguous named accounts still require explicit selection |
 | Liquid Glass-inspired interaction | A single floating functional layer uses adaptive tint, pointer-responsive lensing, depth, selective blue tint, and reduced-transparency/motion fallbacks; Chrome CSS cannot invoke Apple's proprietary system material |
 | Biometric exact-origin AutoFill | Implemented as a fresh ceremony for every credential release, including while the manager session is already unlocked |
 | Master-password AutoFill while the manager stays locked | Implemented in a protected extension-origin sheet that clears the submitted password and relocks after filling |

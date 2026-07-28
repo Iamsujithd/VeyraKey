@@ -221,7 +221,7 @@ describe("extension popup", () => {
     expect(lock).toHaveBeenCalled();
   });
 
-  it("automatically fills the observed username after biometrics finds multiple matches", async () => {
+  it("ignores a blank duplicate and automatically fills the only named login", async () => {
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
       status: "locked",
@@ -275,7 +275,7 @@ describe("extension popup", () => {
     window.history.replaceState(
       null,
       "",
-      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin&usernameHint=student",
+      "/?mode=biometric-autofill&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
     );
 
     render(<App client={vaultClient} />);
