@@ -1,6 +1,6 @@
 {
-  "name": "zero-knowledge-security-wallet",
-  "version": "0.0.0",
+  "name": "veyrakey",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.10.0",
@@ -10,16 +10,22 @@
   },
   "scripts": {
     "build": "pnpm --recursive --if-present run build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm release:package && pnpm verify:artifacts",
     "dev:api": "pnpm --dir apps/api dev",
     "dev:extension": "pnpm --dir apps/extension dev",
     "dev:web": "pnpm --dir apps/web dev",
     "format": "biome format --write .",
     "lint": "biome check .",
     "test": "vitest run",
+    "test:extension-runtime": "node tooling/extension-runtime-smoke.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm --recursive --if-present run typecheck",
-    "verify:artifacts": "node tooling/verify-artifacts.mjs"
+    "verify:artifacts": "node tooling/verify-artifacts.mjs",
+    "release:package": "pnpm --dir apps/extension release:package",
+    "release:manifest": "node tooling/create-release-manifest.mjs",
+    "release:status": "node tooling/verify-public-release.mjs",
+    "release:verify": "pnpm check && pnpm release:manifest && pnpm release:status",
+    "release:verify:public": "pnpm release:verify && node tooling/verify-public-release.mjs --require-complete"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

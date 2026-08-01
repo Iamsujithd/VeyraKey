@@ -7,7 +7,9 @@ import {
   XCHACHA20_POLY1305_ALGORITHM,
 } from "@zk-wallet/crypto";
 import {
+  type ActiveDeviceSlot,
   type ActiveDeviceSlotV1,
+  type ActiveDeviceSlotV2,
   type DeviceSlotV1,
   EMPTY_VAULT_SCHEMA_VERSION,
   ENVELOPE_VERSION,
@@ -283,6 +285,29 @@ function parseRecoverySlot(value: unknown): RecoveryKitSlotV1 {
   };
 }
 
+function parseDeviceScope(value: unknown): string {
+  const scope = string(value, "Device slot scope");
+  if (scope.length === 0 || scope.length > 255) {
+    throw new VaultError("INVALID_VAULT_HEADER", "Device slot scope is invalid");
+  }
+  try {
+    const parsed = new URL(scope);
+    if (
+      !["chrome-extension:", "http:", "https:", "moz-extension:"].includes(parsed.protocol) ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      !["", "/"].includes(parsed.pathname) ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    ) {
+      throw new Error("invalid scope");
+    }
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch {
+    throw new VaultError("INVALID_VAULT_HEADER", "Device slot scope is invalid");
+  }
+}
+
 function parseDeviceSlot(value: unknown): DeviceSlotV1 {
   const slot = record(value, "Device slot");
   const status = string(slot.status, "Device slot status");
@@ -301,28 +326,46 @@ function parseDeviceSlot(value: unknown): DeviceSlotV1 {
   if (status !== "active") {
     throw new VaultError("INVALID_VAULT_HEADER", "Device slot status is invalid");
   }
+  const version = integer(slot.version, "Device slot version");
   exactKeys(
     slot,
-    ["credentialId", "id", "prfInput", "status", "type", "version", "wrappedKeys"],
+    version === 2
+      ? ["credentialId", "id", "prfInput", "scope", "status", "type", "version", "wrappedKeys"]
+      : ["credentialId", "id", "prfInput", "status", "type", "version", "wrappedKeys"],
     "Active device slot",
   );
-  if (integer(slot.version, "Device slot version") !== 1 || slot.type !== "webauthn-prf") {
+  if (![1, 2].includes(version) || slot.type !== "webauthn-prf") {
     throw new VaultError("UNSUPPORTED_VAULT_VERSION", "Device slot is unsupported");
   }
-  return {
-    credentialId: canonicalVariableBytes(
-      slot.credentialId,
-      1,
-      MAXIMUM_CREDENTIAL_ID_BYTES,
-      "Credential ID",
-    ),
-    id: canonicalBytes(slot.id, 16, "Device slot ID"),
-    prfInput: canonicalBytes(slot.prfInput, 32, "PRF input"),
-    status: "active",
-    type: "webauthn-prf",
-    version: 1,
-    wrappedKeys: parseWrappedKeys(slot.wrappedKeys),
-  } satisfies ActiveDeviceSlotV1;
+  const credentialId = canonicalVariableBytes(
+    slot.credentialId,
+    1,
+    MAXIMUM_CREDENTIAL_ID_BYTES,
+    "Credential ID",
+  );
+  const id = canonicalBytes(slot.id, 16, "Device slot ID");
+  const prfInput = canonicalBytes(slot.prfInput, 32, "PRF input");
+  const wrappedKeys = parseWrappedKeys(slot.wrappedKeys);
+  return version === 2
+    ? ({
+        credentialId,
+        id,
+        prfInput,
+        scope: parseDeviceScope(slot.scope),
+        status: "active",
+        type: "webauthn-prf",
+        version: 2,
+        wrappedKeys,
+      } satisfies ActiveDeviceSlotV2)
+    : ({
+        credentialId,
+        id,
+        prfInput,
+        status: "active",
+        type: "webauthn-prf",
+        version: 1,
+        wrappedKeys,
+      } satisfies ActiveDeviceSlotV1);
 }
 
 function parseV1(header: Record<string, unknown>): VaultHeaderV1 {
@@ -394,7 +437,7 @@ function parseV2(header: Record<string, unknown>): VaultHeaderV2 {
     throw new VaultError("INVALID_VAULT_HEADER", "Key-slot IDs are duplicated");
   }
   const credentialIds = deviceSlots
-    .filter((slot): slot is ActiveDeviceSlotV1 => slot.status === "active")
+    .filter((slot): slot is ActiveDeviceSlot => slot.status === "active")
     .map((slot) => slot.credentialId);
   if (new Set(credentialIds).size !== credentialIds.length) {
     throw new VaultError("INVALID_VAULT_HEADER", "Credential IDs are duplicated");

@@ -5,7 +5,9 @@ import {
   createEncryptedTombstone,
   ItemError,
   openEncryptedItemRevision,
+  parseIdentityProfileInput,
   parseLoginInput,
+  parsePaymentCardInput,
   parseSecureNoteInput,
 } from "./items";
 
@@ -38,6 +40,74 @@ describe("Task 4 item schemas and encryption", () => {
     expect(() => parseSecureNoteInput({ note: "x".repeat(1_048_577), title: "large" })).toThrow(
       ItemError,
     );
+  });
+
+  it("strictly validates and encrypts an identity profile", async () => {
+    const input = parseIdentityProfileInput({
+      addressLine1: "1 Private Way",
+      addressLine2: "",
+      age: "26",
+      city: "Example City",
+      country: "IN",
+      dateOfBirth: "2000-01-02",
+      email: "person@example.test",
+      firstName: "Private",
+      lastName: "Person",
+      middleName: "",
+      nickname: "P",
+      organization: "Example",
+      phone: "+91 9000000000",
+      postalCode: "000000",
+      region: "Region",
+      title: "Personal profile",
+    });
+    const revision = await createEncryptedItemRevision(
+      crypto,
+      rootKey,
+      vaultId,
+      { input, type: "identity-profile" },
+      "2026-07-28T00:00:00.000Z",
+    );
+    expect(JSON.stringify(revision)).not.toContain("person@example.test");
+    await expect(
+      openEncryptedItemRevision(crypto, rootKey, vaultId, revision),
+    ).resolves.toMatchObject({ ...input, type: "identity-profile" });
+    expect(() => parseIdentityProfileInput({ ...input, unknown: true })).toThrow(ItemError);
+    expect(
+      parseIdentityProfileInput(
+        Object.fromEntries(Object.entries(input).filter(([key]) => key !== "age")),
+      ),
+    ).toMatchObject({ age: "" });
+  });
+
+  it("validates and encrypts payment card records without plaintext leakage", async () => {
+    const input = parsePaymentCardInput({
+      billingAddress: "1 Private Way",
+      cardNumber: "4111 1111 1111 1111",
+      cardholderName: "Private Person",
+      expiryMonth: "12",
+      expiryYear: "2030",
+      notes: "",
+      securityCode: "123",
+      title: "Personal card",
+    });
+    expect(input.securityCode).toBe("");
+    const revision = await createEncryptedItemRevision(
+      crypto,
+      rootKey,
+      vaultId,
+      { input, type: "payment-card" },
+      "2026-07-29T00:00:00.000Z",
+    );
+    const serialized = JSON.stringify(revision);
+    expect(serialized).not.toContain("4111 1111 1111 1111");
+    expect(serialized).not.toContain("Private Person");
+    expect(serialized).not.toContain('"123"');
+    await expect(
+      openEncryptedItemRevision(crypto, rootKey, vaultId, revision),
+    ).resolves.toMatchObject({ ...input, type: "payment-card" });
+    expect(() => parsePaymentCardInput({ ...input, cardNumber: "not-a-card" })).toThrow(ItemError);
+    expect(() => parsePaymentCardInput({ ...input, securityCode: "12" })).toThrow(ItemError);
   });
 
   it("round-trips a login without storing plaintext or raw item keys", async () => {

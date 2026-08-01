@@ -6,38 +6,24 @@ const DECIMAL_COUNT = /^(0|[1-9][0-9]{0,11})$/u;
 export interface PasswordHealthLogin {
   readonly id: string;
   readonly password: string;
-  readonly updatedAt: string;
 }
 
 export interface PasswordHealthFinding {
-  readonly ageDays: number | null;
   readonly id: string;
-  readonly old: boolean;
   readonly reused: boolean;
   readonly weak: boolean;
 }
 
 export function analyzePasswordHealth(
   logins: readonly PasswordHealthLogin[],
-  now = Date.now(),
-  oldAfterDays = 365,
 ): readonly PasswordHealthFinding[] {
-  if (!Number.isFinite(now) || oldAfterDays < 1 || !Number.isInteger(oldAfterDays)) {
-    throw new TypeError("Invalid password-health policy");
-  }
   const reuseCounts = new Map<string, number>();
   for (const login of logins) {
     reuseCounts.set(login.password, (reuseCounts.get(login.password) ?? 0) + 1);
   }
   return logins.map((login) => {
-    const updatedAt = Date.parse(login.updatedAt);
-    const ageDays = Number.isFinite(updatedAt)
-      ? Math.max(0, Math.floor((now - updatedAt) / 86_400_000))
-      : null;
     return {
-      ageDays,
       id: login.id,
-      old: ageDays !== null && ageDays >= oldAfterDays,
       reused: login.password.length > 0 && (reuseCounts.get(login.password) ?? 0) > 1,
       weak: isWeakPassword(login.password),
     };

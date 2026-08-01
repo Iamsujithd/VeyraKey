@@ -72,8 +72,8 @@ Implement sequentially. For every task: add failing tests first, implement one s
 
 ### Task 12: Password-health dashboard — complete
 
-- **Simple purpose:** Show weak, reused, old, and known-compromised passwords without exposing passwords.
-- **Includes:** Local analysis, password-age recommendations, HIBP Pwned Passwords k-anonymity, padded response parsing, offline behavior, and malicious-response tests.
+- **Simple purpose:** Show weak, reused, and known-compromised passwords without exposing passwords.
+- **Includes:** Local weakness/reuse analysis, HIBP Pwned Passwords k-anonymity, padded response parsing, offline behavior, and malicious-response tests.
 - **Deferred:** Continuous account-breach monitoring, paid API-key support, and complex 2FA heuristics.
 
 ### Task 13: Whole-system hardening and accessibility — complete
@@ -81,10 +81,10 @@ Implement sequentially. For every task: add failing tests first, implement one s
 - **Simple purpose:** Turn the working product into defensible industry-grade engineering.
 - **Includes:** Updated threat model, fuzz/property/security corpus, sync chaos, offline/provider-failure tests, parser/network limits, CSP/permission review, SBOM, dependency review, accessibility, performance profiling, KDF worker evaluation, code splitting, and documented limitations.
 
-### Task 14: Deployment and portfolio release — in review (external gates open)
+### Task 14: Deployment and portfolio release — local release candidate complete
 
 - **Simple purpose:** Produce a reproducible, reviewable, polished portfolio release.
-- **Includes:** Static web deployment, minimal Worker deployment only where needed, Google OAuth configuration, Chrome/Firefox packages, production smoke tests, migration/rollback plan, SBOM, architecture walkthrough, threat-model summary, demo script, screenshots, and release checklist.
+- **Includes:** Local static web and Worker artifacts, Google OAuth configuration, Chrome/Firefox packages, production smoke tests, migration/rollback plan, SBOM, architecture walkthrough, threat-model summary, demo script, screenshots, and release checklist. Public distribution remains an evidence-gated release-owner action.
 
 ## Optional stretch work after v1
 

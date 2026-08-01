@@ -38,21 +38,24 @@ describe("WebAuthn PRF provider", () => {
       createWebAuthnPrfProvider({ platform: supported.platform }).getCapability(),
     ).resolves.toBe("supported");
 
-    const unsupportedExtension: WebAuthnPrfPlatform = {
+    const extensionWithAdvisoryFalse: WebAuthnPrfPlatform = {
       ...supported.platform,
+      hostname: "abcdefghijklmnop",
+      protocol: "chrome-extension:",
       getClientCapabilities: async () => ({ "extension:prf": false }),
     };
     await expect(
-      createWebAuthnPrfProvider({ platform: unsupportedExtension }).getCapability(),
-    ).resolves.toBe("unsupported");
+      createWebAuthnPrfProvider({ platform: extensionWithAdvisoryFalse }).getCapability(),
+    ).resolves.toBe("supported");
 
     const extensionOrigin: WebAuthnPrfPlatform = {
       ...supported.platform,
+      hostname: "abcdefghijklmnop",
       protocol: "chrome-extension:",
     };
-    await expect(
-      createWebAuthnPrfProvider({ platform: extensionOrigin }).getCapability(),
-    ).resolves.toBe("supported");
+    const extensionProvider = createWebAuthnPrfProvider({ platform: extensionOrigin });
+    await expect(extensionProvider.getCapability()).resolves.toBe("supported");
+    expect(extensionProvider.getScope?.()).toBe("chrome-extension://abcdefghijklmnop");
 
     const insecureOrigin: WebAuthnPrfPlatform = {
       ...supported.platform,
@@ -94,6 +97,30 @@ describe("WebAuthn PRF provider", () => {
         userVerification: "required",
       },
     });
+  });
+
+  it("uses the real PRF ceremony when advisory capability reporting is false", async () => {
+    const { create, get, output, platform } = supportedPlatform();
+    const provider = createWebAuthnPrfProvider({
+      platform: {
+        ...platform,
+        getClientCapabilities: async () => ({ "extension:prf": false }),
+      },
+    });
+    const prfInput = new Uint8Array(32).fill(0x7c);
+
+    await expect(provider.getCapability()).resolves.toBe("unsupported");
+    await expect(
+      provider.enroll({
+        prfInput,
+        userId: new Uint8Array(16).fill(0x31),
+      }),
+    ).resolves.toEqual({
+      credentialId: "AQIDBA",
+      prfOutput: output,
+    });
+    expect(create).toHaveBeenCalledOnce();
+    expect(get).toHaveBeenCalledOnce();
   });
 
   it("evaluates an enrolled credential with a random challenge and exact 32-byte output", async () => {
@@ -157,6 +184,10 @@ describe("WebAuthn PRF provider", () => {
         credentialId: "AQ",
         prfInput: new Uint8Array(32),
       }),
-    ).rejects.toMatchObject({ code: "PRF_OPERATION_FAILED", message: "Device unlock failed" });
+    ).rejects.toMatchObject({
+      code: "PRF_OPERATION_FAILED",
+      message: "Biometric verification was canceled or timed out",
+      reason: "canceled-or-timed-out",
+    });
   });
 });

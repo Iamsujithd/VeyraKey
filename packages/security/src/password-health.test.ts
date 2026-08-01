@@ -6,18 +6,15 @@ import {
 } from "./password-health";
 
 describe("local password health", () => {
-  it("reports weak, reused, and old credentials without returning passwords", () => {
-    const findings = analyzePasswordHealth(
-      [
-        { id: "a", password: "same", updatedAt: "2024-01-01T00:00:00.000Z" },
-        { id: "b", password: "same", updatedAt: "2026-07-01T00:00:00.000Z" },
-        { id: "c", password: "Unique-Long-Password-93", updatedAt: "invalid" },
-      ],
-      Date.parse("2026-07-25T00:00:00.000Z"),
-    );
-    expect(findings[0]).toMatchObject({ old: true, reused: true, weak: true });
-    expect(findings[1]).toMatchObject({ old: false, reused: true, weak: true });
-    expect(findings[2]).toMatchObject({ ageDays: null, reused: false, weak: false });
+  it("reports weak and reused credentials without returning passwords", () => {
+    const findings = analyzePasswordHealth([
+      { id: "a", password: "same" },
+      { id: "b", password: "same" },
+      { id: "c", password: "Unique-Long-Password-93" },
+    ]);
+    expect(findings[0]).toMatchObject({ reused: true, weak: true });
+    expect(findings[1]).toMatchObject({ reused: true, weak: true });
+    expect(findings[2]).toMatchObject({ reused: false, weak: false });
     expect(JSON.stringify(findings)).not.toContain("same");
   });
 });

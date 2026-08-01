@@ -35,7 +35,7 @@ The project demonstrates applied cryptography, browser-extension isolation, offl
 - Password/passphrase generation, TOTP, and clipboard timeout.
 - Tags, favorites, folders, and encrypted search.
 - CSV/Bitwarden import and encrypted archive backup/restore.
-- Local weak/reused/old analysis and HIBP k-anonymous password checks.
+- Local weak/reused analysis and HIBP k-anonymous password checks.
 - Hardening, accessibility, reproducible builds, and a polished portfolio demo.
 
 ## Deferred direction

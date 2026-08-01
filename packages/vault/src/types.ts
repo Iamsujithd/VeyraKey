@@ -1,10 +1,13 @@
 import type { Argon2idParameters } from "@zk-wallet/crypto";
 import type {
   EncryptedItemRevisionV1,
+  IdentityProfileItemInput,
   LoginItemInput,
+  PaymentCardItemInput,
   SecureNoteItemInput,
   VaultItem,
 } from "./items";
+import type { CreatedEncryptedItemShare } from "./share";
 
 export const VAULT_HEADER_FORMAT = "zk-wallet-vault" as const;
 export const VAULT_HEADER_VERSION_V1 = 1 as const;
@@ -89,6 +92,17 @@ export interface ActiveDeviceSlotV1 {
   readonly wrappedKeys: WrappedKeySetV1;
 }
 
+export interface ActiveDeviceSlotV2 {
+  readonly credentialId: string;
+  readonly id: string;
+  readonly prfInput: string;
+  readonly scope: string;
+  readonly status: "active";
+  readonly type: "webauthn-prf";
+  readonly version: 2;
+  readonly wrappedKeys: WrappedKeySetV1;
+}
+
 export interface RevokedDeviceSlotV1 {
   readonly id: string;
   readonly status: "revoked";
@@ -96,7 +110,8 @@ export interface RevokedDeviceSlotV1 {
   readonly version: 1;
 }
 
-export type DeviceSlotV1 = ActiveDeviceSlotV1 | RevokedDeviceSlotV1;
+export type ActiveDeviceSlot = ActiveDeviceSlotV1 | ActiveDeviceSlotV2;
+export type DeviceSlotV1 = ActiveDeviceSlot | RevokedDeviceSlotV1;
 
 export interface VaultHeaderV2 {
   readonly deviceSlots: readonly DeviceSlotV1[];
@@ -195,6 +210,13 @@ export interface ChangeMasterPasswordRequest {
   readonly newPassword: string;
 }
 
+export interface VaultItemHistoryEntry {
+  readonly item: VaultItem | null;
+  readonly operation: EncryptedItemRevisionV1["operation"];
+  readonly parentRevisionId: string | null;
+  readonly revisionId: string;
+}
+
 export type StepUpCredential =
   | { readonly password: string; readonly type: "master-password" }
   | { readonly recoveryKit: string; readonly type: "recovery-kit" }
@@ -202,8 +224,11 @@ export type StepUpCredential =
 
 export interface VaultClient {
   changeMasterPassword(request: ChangeMasterPasswordRequest): Promise<VaultPublicState>;
+  createItemShare?(itemId: string, expiresAt: string): Promise<CreatedEncryptedItemShare>;
   createVault(masterPassword: string): Promise<VaultPublicState>;
+  createIdentityProfile?(input: IdentityProfileItemInput): Promise<VaultItem>;
   createLogin(input: LoginItemInput): Promise<VaultItem>;
+  createPaymentCard?(input: PaymentCardItemInput): Promise<VaultItem>;
   createSecureNote(input: SecureNoteItemInput): Promise<VaultItem>;
   deleteItem(itemId: string, expectedRevisionId: string): Promise<void>;
   enrollDevice(masterPassword: string): Promise<VaultPublicState>;
@@ -214,9 +239,12 @@ export interface VaultClient {
   importItems?(
     items: readonly (
       | { readonly input: LoginItemInput; readonly type: "login" }
+      | { readonly input: IdentityProfileItemInput; readonly type: "identity-profile" }
+      | { readonly input: PaymentCardItemInput; readonly type: "payment-card" }
       | { readonly input: SecureNoteItemInput; readonly type: "secure-note" }
     )[],
   ): Promise<readonly VaultItem[]>;
+  listItemHistory?(itemId: string): Promise<readonly VaultItemHistoryEntry[]>;
   listItems(): Promise<readonly VaultItem[]>;
   lock(): VaultPublicState;
   recordActivity(): void;
@@ -228,6 +256,11 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultPublicState>;
+  restoreItemRevision?(
+    itemId: string,
+    historicalRevisionId: string,
+    expectedHeadRevisionId: string,
+  ): Promise<VaultItem>;
   revokeDevice(slotId: string): Promise<VaultPublicState>;
   searchItems?(query: string): Promise<readonly VaultItem[]>;
   stepUpCompartment(
@@ -242,6 +275,16 @@ export interface VaultClient {
     itemId: string,
     expectedRevisionId: string,
     input: LoginItemInput,
+  ): Promise<VaultItem>;
+  updatePaymentCard?(
+    itemId: string,
+    expectedRevisionId: string,
+    input: PaymentCardItemInput,
+  ): Promise<VaultItem>;
+  updateIdentityProfile?(
+    itemId: string,
+    expectedRevisionId: string,
+    input: IdentityProfileItemInput,
   ): Promise<VaultItem>;
   updateSecureNote(
     itemId: string,

@@ -10,7 +10,7 @@ import {
   IndexedDbItemRevisionRepository,
   IndexedDbVaultHeaderRepository,
 } from "@zk-wallet/persistence";
-import { createVaultService } from "@zk-wallet/vault";
+import { createVaultService, openEncryptedItemShare } from "@zk-wallet/vault";
 import { afterEach, describe, expect, it } from "vitest";
 
 const databaseNames: string[] = [];
@@ -158,5 +158,159 @@ describe("encrypted IndexedDB vault integration", () => {
     expect(stored).not.toContain("updated password");
     expect(stored).not.toContain("person@example.test");
     expect(stored).not.toContain("sentinel private note");
+  });
+
+  it("keeps immutable item history and restores an older value as a new revision", async () => {
+    const provider = createCryptoProvider();
+    const fastProvider: CryptoProvider = {
+      deriveArgon2id: (password, salt) =>
+        provider.hkdfSha256(password, salt, utf8ToBytes("test-only-fast-kdf"), 32),
+      hkdfSha256: (inputKey, salt, info, length) =>
+        provider.hkdfSha256(inputKey, salt, info, length),
+      openXChaCha20Poly1305: (key, nonce, ciphertext, aad) =>
+        provider.openXChaCha20Poly1305(key, nonce, ciphertext, aad),
+      randomBytes: (length) => provider.randomBytes(length),
+      sealXChaCha20Poly1305: (key, nonce, plaintext, aad) =>
+        provider.sealXChaCha20Poly1305(key, nonce, plaintext, aad),
+    };
+    const name = databaseName();
+    const service = createVaultService({
+      calibration: {
+        maximumMemoryKiB: ARGON2ID_PRODUCTION_FLOOR.memoryKiB,
+        targetMilliseconds: 0,
+      },
+      crypto: fastProvider,
+      itemRepository: new IndexedDbItemRevisionRepository({ databaseName: name }),
+      repository: new IndexedDbVaultHeaderRepository({ databaseName: name }),
+    });
+    const listItemHistory = service.listItemHistory;
+    const restoreItemRevision = service.restoreItemRevision;
+    if (listItemHistory === undefined || restoreItemRevision === undefined) {
+      throw new Error("Item history is unavailable");
+    }
+    await service.createVault("history-master-password");
+    const created = await service.createLogin({
+      notes: "first",
+      password: "first-password",
+      title: "History test",
+      uris: ["https://history.example"],
+      username: "person@example.test",
+    });
+    const updated = await service.updateLogin(created.id, created.revisionId, {
+      notes: "second",
+      password: "second-password",
+      title: "History test",
+      uris: ["https://history.example"],
+      username: "person@example.test",
+    });
+
+    await expect(listItemHistory(created.id)).resolves.toMatchObject([
+      { item: { password: "second-password" }, operation: "update" },
+      { item: { password: "first-password" }, operation: "create" },
+    ]);
+    const restored = await restoreItemRevision(created.id, created.revisionId, updated.revisionId);
+    expect(restored).toMatchObject({
+      id: created.id,
+      password: "first-password",
+      type: "login",
+    });
+    expect(restored.revisionId).not.toBe(created.revisionId);
+    await expect(listItemHistory(created.id)).resolves.toHaveLength(3);
+    await expect(
+      restoreItemRevision(created.id, updated.revisionId, updated.revisionId),
+    ).rejects.toMatchObject({ code: "ITEM_WRITE_CONFLICT" });
+  });
+
+  it("can recover a deleted item without removing its tombstone from history", async () => {
+    const provider = createCryptoProvider();
+    const fastProvider: CryptoProvider = {
+      deriveArgon2id: (password, salt) =>
+        provider.hkdfSha256(password, salt, utf8ToBytes("test-only-fast-kdf"), 32),
+      hkdfSha256: (inputKey, salt, info, length) =>
+        provider.hkdfSha256(inputKey, salt, info, length),
+      openXChaCha20Poly1305: (key, nonce, ciphertext, aad) =>
+        provider.openXChaCha20Poly1305(key, nonce, ciphertext, aad),
+      randomBytes: (length) => provider.randomBytes(length),
+      sealXChaCha20Poly1305: (key, nonce, plaintext, aad) =>
+        provider.sealXChaCha20Poly1305(key, nonce, plaintext, aad),
+    };
+    const name = databaseName();
+    const service = createVaultService({
+      calibration: {
+        maximumMemoryKiB: ARGON2ID_PRODUCTION_FLOOR.memoryKiB,
+        targetMilliseconds: 0,
+      },
+      crypto: fastProvider,
+      itemRepository: new IndexedDbItemRevisionRepository({ databaseName: name }),
+      repository: new IndexedDbVaultHeaderRepository({ databaseName: name }),
+    });
+    const listItemHistory = service.listItemHistory;
+    const restoreItemRevision = service.restoreItemRevision;
+    if (listItemHistory === undefined || restoreItemRevision === undefined) {
+      throw new Error("Item history is unavailable");
+    }
+    await service.createVault("deleted-history-master-password");
+    const note = await service.createSecureNote({ note: "recover me", title: "Deleted note" });
+    await service.deleteItem(note.id, note.revisionId);
+    const history = await listItemHistory(note.id);
+    expect(history).toMatchObject([
+      { item: null, operation: "delete" },
+      { item: { note: "recover me" }, operation: "create" },
+    ]);
+
+    const deletedHead = history[0];
+    if (deletedHead === undefined) throw new Error("Missing deletion history");
+    const restored = await restoreItemRevision(note.id, note.revisionId, deletedHead.revisionId);
+    expect(restored).toMatchObject({ note: "recover me", type: "secure-note" });
+    await expect(listItemHistory(note.id)).resolves.toMatchObject([
+      { item: { note: "recover me" }, operation: "update" },
+      { item: null, operation: "delete" },
+      { item: { note: "recover me" }, operation: "create" },
+    ]);
+  });
+
+  it("exports one authenticated item without exposing its plaintext or vault keys", async () => {
+    const provider = createCryptoProvider();
+    const fastProvider: CryptoProvider = {
+      deriveArgon2id: (password, salt) =>
+        provider.hkdfSha256(password, salt, utf8ToBytes("test-only-fast-kdf"), 32),
+      hkdfSha256: (inputKey, salt, info, length) =>
+        provider.hkdfSha256(inputKey, salt, info, length),
+      openXChaCha20Poly1305: (key, nonce, ciphertext, aad) =>
+        provider.openXChaCha20Poly1305(key, nonce, ciphertext, aad),
+      randomBytes: (length) => provider.randomBytes(length),
+      sealXChaCha20Poly1305: (key, nonce, plaintext, aad) =>
+        provider.sealXChaCha20Poly1305(key, nonce, plaintext, aad),
+    };
+    const name = databaseName();
+    const service = createVaultService({
+      calibration: {
+        maximumMemoryKiB: ARGON2ID_PRODUCTION_FLOOR.memoryKiB,
+        targetMilliseconds: 0,
+      },
+      crypto: fastProvider,
+      itemRepository: new IndexedDbItemRevisionRepository({ databaseName: name }),
+      repository: new IndexedDbVaultHeaderRepository({ databaseName: name }),
+    });
+    if (service.createItemShare === undefined) throw new Error("Encrypted sharing is unavailable");
+    await service.createVault("sharing-master-password");
+    const login = await service.createLogin({
+      notes: "one item only",
+      password: "share-only-password",
+      title: "Share test",
+      uris: ["https://share.example"],
+      username: "shared@example.test",
+    });
+    const now = new Date().toISOString();
+    const created = await service.createItemShare(
+      login.id,
+      new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
+    );
+
+    expect(JSON.stringify(created.bundle)).not.toContain("share-only-password");
+    expect(JSON.stringify(created.bundle)).not.toContain("shared@example.test");
+    await expect(
+      openEncryptedItemShare(fastProvider, created.bundle, created.secret, now),
+    ).resolves.toMatchObject({ password: "share-only-password", type: "login" });
   });
 });

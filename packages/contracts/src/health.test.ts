@@ -7,7 +7,7 @@ describe("health contract", () => {
     expect(HEALTH_PATH).toBe("/v1/health");
     expect(HEALTH_RESPONSE).toEqual({
       apiVersion: "v1",
-      service: "zk-wallet-api",
+      service: "veyrakey-api",
       status: "ok",
     });
   });

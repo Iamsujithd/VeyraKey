@@ -5,6 +5,7 @@ import {
   createCryptoProvider,
   type DevicePrfCapability,
   type DevicePrfEnrollmentRequest,
+  DevicePrfError,
   type DevicePrfEvaluationRequest,
   type DevicePrfProvider,
   utf8ToBytes,
@@ -63,12 +64,20 @@ class FakeDevicePrfProvider implements DevicePrfProvider {
   credentialCounter = 0;
   evaluationCount = 0;
   output = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+  scope: string | null = null;
 
   async getCapability(): Promise<DevicePrfCapability> {
     return this.capability;
   }
 
+  getScope(): string | null {
+    return this.scope;
+  }
+
   async enroll(_request: DevicePrfEnrollmentRequest) {
+    if (this.capability === "unsupported") {
+      throw new DevicePrfError("unsupported");
+    }
     this.credentialCounter += 1;
     return {
       credentialId: `credential-${this.credentialCounter}`,
@@ -77,6 +86,9 @@ class FakeDevicePrfProvider implements DevicePrfProvider {
   }
 
   async evaluate(_request: DevicePrfEvaluationRequest): Promise<Uint8Array> {
+    if (this.capability === "unsupported") {
+      throw new DevicePrfError("unsupported");
+    }
     this.evaluationCount += 1;
     return this.output.slice();
   }
@@ -439,6 +451,31 @@ describe("Task 3 device slots and master-password rotation", () => {
       code: "DEVICE_UNLOCK_FAILED",
     });
     await expect(service.unlock(MASTER_PASSWORD)).resolves.toMatchObject({ status: "unlocked" });
+  });
+
+  it("binds new device slots to the exact WebAuthn app scope", async () => {
+    const { devicePrf, repository, service } = serviceFor();
+    devicePrf.scope = "chrome-extension://abcdefghijklmnop";
+    await createAndVerify(service);
+
+    const enrolled = await service.enrollDevice(MASTER_PASSWORD);
+    if (enrolled.status !== "unlocked") throw new Error("Expected unlocked state");
+    const slotId = enrolled.deviceUnlock.slots[0]?.id;
+    if (slotId === undefined) throw new Error("Expected an enrolled slot");
+    const header = parseVaultHeader(await repository.read());
+    if (header.version !== 2) throw new Error("Expected VaultHeaderV2");
+    expect(header.deviceSlots[0]).toMatchObject({
+      scope: "chrome-extension://abcdefghijklmnop",
+      status: "active",
+      version: 2,
+    });
+
+    service.lock();
+    devicePrf.scope = "http://127.0.0.1";
+    await expect(service.unlockWithDevice(slotId)).rejects.toMatchObject({
+      code: "DEVICE_UNLOCK_FAILED",
+      message: "This biometric enrollment is not available to this app",
+    });
   });
 
   it("does not enroll when PRF is unsupported and never weakens fallback", async () => {

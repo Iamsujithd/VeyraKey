@@ -3,10 +3,10 @@
 ## Overall status
 
 - **Documentation baseline:** Complete.
-- **Application implementation:** V1 feature implementation complete; portfolio release in review.
-- **Current implementation task:** Task 14 — local-only release; real-account/browser/store evidence open.
-- **Completed implementation tasks:** 13/14.
-- **Last updated:** 2026-07-28T14:30:00Z — Extension 0.6.11 dismisses irrelevant username suggestions and accepts case-insensitive prefilled username matches.
+- **Application implementation:** V1 feature implementation and local release candidate complete.
+- **Current implementation task:** Task 14 — external publication and independent-review evidence open.
+- **Completed implementation tasks:** 14/14 locally; four external release-owner/reviewer gates remain.
+- **Last updated:** 2026-07-31 — Extension 0.10.0 has aligned package/manifest versions, reproducible checksummed artifacts, and a CI-preserved release manifest.
 
 ## Status definitions
 
@@ -26,15 +26,15 @@
 | 4 | Encrypted login/note CRUD | Complete | `pnpm check` passes; 20 test files/86 tests; encrypted immutable CRUD/restart/concurrency/plaintext inspection; web and both MV3 builds | None |
 | 5 | Immutable sync engine | Complete | `pnpm check` passes; 22 test files/97 tests; encrypted two-device convergence, HLC/DAG/conflicts, retry/quarantine, durable queue, snapshots/checkpoints, conflict UI | None |
 | 6 | Google Drive BYOS | Complete | Real web-client OAuth/sync/restore wiring; appDataFolder-only adapter; encrypted recovery archive; provider and UI suites | User-owned OAuth client/test-account run remains external evidence |
-| 6A | Microsoft OneDrive BYOS | Code complete | OAuth authorization code with PKCE; least-privilege app folder; immutable sync objects; encrypted recovery archive; provider and web tests | User-owned Entra client/test-account run remains external evidence |
+| 6A | Microsoft OneDrive BYOS | Locally complete | OAuth authorization code with PKCE; least-privilege app folder; immutable sync objects; encrypted recovery archive; provider and web tests | User-owned Entra client/test-account run remains external evidence |
 | 7 | Secure MV3 extension sessions | Complete | `pnpm check`; authenticated restart resume, trusted storage/sender tests, multi-context lock | Real-browser suspension matrix remains a release gate |
-| 8 | Origin-safe autofill/capture | Complete | Exact-origin/IDN policy, activeTab fill, confirmed save/update, hostile context tests | Real-browser fixture matrix remains a release gate |
+| 8 | Origin-safe autofill/capture | Complete | Exact-origin/IDN policy, activeTab fill, confirmed save/update, signup-only generation, profile-field fill, hostile context tests | Real-browser fixture matrix remains a release gate |
 | 9 | Password generation/TOTP/clipboard | Complete | RFC vectors, encrypted TOTP fields, QR/URI import, generator and clipboard tests | Native QR capability varies and fails visibly |
 | 10 | Organization/encrypted search | Complete | Encrypted schema/index migration, tags/folders/favorites/search UI and tests | None |
 | 11 | Focused import/encrypted backup | Complete | Strict CSV/Bitwarden preview, atomic rollback, encrypted full-history archive and clean-profile restore; `pnpm check` at 29 files/146 tests | None |
 | 12 | Password-health dashboard/HIBP | Complete | Local weak/reused/age analysis; prefix-only padded HIBP client; offline/malicious/oversize tests | Live corpus availability is external and fails visibly |
 | 13 | Whole-system hardening/accessibility | Complete | Property/chaos corpus, parser limits, CSP/permissions scan, SBOM, semantic UI coverage, chunk budgets/splitting, documented review | Representative-device and independent review remain release evidence, not claimed |
-| 14 | Portfolio deployment/release | In review | Reproducible local builds, Chrome/Firefox ZIPs, SBOM, hashes, runbook, operational Drive setup guide | Hosting intentionally removed; Google test account, real-browser matrix, store signing |
+| 14 | Portfolio deployment/release | Local RC complete | Reproducible local builds, Chrome/Firefox ZIPs, SBOM, checksummed release manifest, runbook, and CI artifact preservation | Public OAuth evidence, physical biometric matrix, store signing, independent review |
 
 ## Completion record
 
@@ -309,9 +309,9 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 ### Tasks 11–12 — Portable encrypted data and password health
 
 - **Status:** Complete.
-- **Scope delivered:** Strict bounded CSV and Bitwarden login preview/import, duplicate warnings and opt-in selection, atomic encrypted batch persistence, a full immutable-history encrypted archive, clean-profile Recovery Kit restore, local weak/reused/old password analysis, and user-triggered padded Pwned Passwords range checks.
+- **Scope delivered:** Strict bounded CSV and Bitwarden login preview/import, duplicate warnings and opt-in selection, atomic encrypted batch persistence, a full immutable-history encrypted archive, clean-profile Recovery Kit restore, local weak/reused password analysis, and user-triggered padded Pwned Passwords range checks.
 - **Validation:** The Task 11 acceptance run passed 29 test files/146 tests. Added Task 12 tests assert that only the five-character SHA-1 prefix reaches the network and cover offline, malformed, oversized, unsafe-count, match, and not-found responses. Archive integration proves plaintext exclusion, authenticated round trip, new master wrapping, and rollback on corruption.
-- **Limitations:** Import intentionally excludes encrypted/unsupported Bitwarden records and ordinary plaintext export. Password age is estimated from the item revision timestamp. HIBP k-anonymity does not hide IP, timing, or the prefix anonymity set.
+- **Limitations:** Import intentionally excludes encrypted/unsupported Bitwarden records and ordinary plaintext export. Password age is not reported because an item revision timestamp does not establish when the user last changed the password at the relying party. HIBP k-anonymity does not hide IP, timing, or the prefix anonymity set.
 
 ### Task 13 — Whole-system hardening and accessibility
 
@@ -322,16 +322,44 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
 
 ### Task 14 — Portfolio release
 
-- **Status:** In review.
+- **Status:** Local release candidate complete; external publication gates open.
 - **Local deliverables:** Static web and Worker dry-run outputs; reproducible Chrome and Firefox MV3 ZIPs; validated SBOM; release/security documentation; smoke/demo script; migration and rollback plan; and artifact checks integrated into CI.
-- **Artifact evidence:** Version 0.6.11 Chrome ZIP SHA-256 `288cbb92b40038b10e1fcea69a99c74b40ec6baa85cfad3bc2e427be2872f586`; Firefox ZIP SHA-256 `7c009d67453a6904786dbbd371218fde4129130243c5f3b63bad0377070d6791`; source ZIP SHA-256 `440adf47210ea345a0004af88aa60e9bb7ea828e678068f827f2c00ab33d46d2`; lockfile SHA-256 `eb159431d99f74d8498e15bc0b6d527ee14cfa81f261357954f0474affdf8294`.
-- **Latest validation:** `CI=true pnpm check` passes with 36 test files and 193 tests, all production targets, and artifact verification. Version 0.6.11 adds input-driven suggestion dismissal: typed username text is compared to stored account labels as a trimmed, case-insensitive prefix, and the field-anchored chooser closes as soon as the text diverges. A generic locked chooser with no local account metadata closes after non-empty username input instead of obstructing the form. The conservative fill guard now treats case-only username differences as the same account, preserves the user's entered casing, and fills only the password; a genuinely different prefilled username still fails closed. Chrome was reloaded from the current unpacked output, but the third-party login fixture and the extension details surface rendered blank after navigation, so no successful live interaction result is claimed for this validation pass. Version 0.6.10 applies one named-account preference rule to both locked metadata and unlocked vault responses, suppressing a blank legacy `Saved login` whenever a named exact-origin account exists. The inline picker no longer creates a second `Sign in as …` action for a single credential; one account produces one fill-only row. Its width is reduced from 300 px to 264 px, row height from 46 px to 38 px, and authentication copy is shortened. The isolated packaged-extension runtime smoke from version 0.6.9 continues to cover extension loading, HTTPS injection, idempotent repeated delivery, dynamic/replaced login detection, service-worker restart persistence, prompt restoration, and extension-origin PRF capability without reported runtime errors. Version 0.6.9 distinguishes successful biometric verification from credential availability and contains content-script invalidation during extension replacement. Version 0.6.8 accepts an identical repeated credential delivery as success without rewriting either field. Version 0.6.7 maintains a validated local-only suggestion index containing only credential ID, username, and exact HTTPS origins. It is rebuilt after authenticated vault reads and saves, is never cloud-synced, and contains no passwords. A physical Touch ID ceremony remains manual release evidence.
-- **Open external gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
+- **Artifact evidence:** Version 0.10.0 hashes are regenerated by the release check and recorded after packaging.
+- **Latest validation:** The complete suite passes with 37 test files and 243 tests before the 0.10.0 release build. It covers quiet unmatched pages, exact-origin username suggestions, visible and submitted-form targeting, explicit save/update capture, locked-save retry preservation, signup-only readable generation, automatic breach checks, encrypted identity and payment-card records, immutable history, single-item encrypted sharing, the compact controller, separate manager mode, and editor lifecycle.
+- **Security UI revision:** The manager now follows an Apple Passwords-style list/detail structure:
+  a persistent sidebar for Passwords, Security, and Cloud & Data; a prioritized recommendation list;
+  a focused recommendation detail pane; compact refresh/change actions; and import/backup moved out
+  of Security. The inaccurate “Old” classification and password-age API were removed completely.
+- **Current verification:** `pnpm release:verify` passes lint, strict typechecking, 37 test files/243 tests,
+  web and Chrome/Firefox MV3 builds, permission and secret scanners, archive checks, size budgets,
+  SBOM verification, version alignment, and release-manifest generation. A fresh-profile Chrome for Testing black-box run passes extension loading,
+  HTTPS content-script injection, idempotent secret delivery, hidden-form exclusion, quiet unmatched
+  pages, exact-origin username prompting, multistep replacement, locked-save retry preservation,
+  service-worker termination recovery, navigation recovery, and extension-origin PRF capability
+  detection. Physical Touch ID remains an external hardware/entitlement gate rather than an
+  inferred success. The current controlled Chrome session could inspect the public fixture but was
+  blocked by browser security policy from opening the unpacked extension origin, so no replacement
+  extension-UI claim is made from that session.
+- **External public-release gates:** Hosting was intentionally removed in favor of localhost. Google OAuth
   is registered for localhost and its configured test account. The pinned Chrome extension ID is
   `lnabfclakgdolgcfallnnhkeeoclfkcf`; its
   `https://lnabfclakgdolgcfallnnhkeeoclfkcf.chromiumapp.org/oauth/google` redirect is registered
   on the Google OAuth client. Microsoft OAuth is blocked until the current account has an Entra
   tenant/directory. A physical Touch ID/Windows Hello/security-key ceremony and the Firefox matrix
   remain external manual gates; Chrome for Testing cannot use macOS Touch ID without Google's
-  keychain entitlement. Neither extension ZIP is store-signed. Task 14 must not be marked complete
-  until the applicable evidence is attached.
+  keychain entitlement. Neither extension ZIP is store-signed. The local Task 14 release candidate
+  is complete; a public/store/audited claim remains blocked until the applicable evidence is attached.
+- **Flagship continuation (2026-07-31):** Exact-origin payment-card suggestions now fill only
+  recognized cardholder, number, and expiry fields on HTTPS top frames; they never fill CVV/CVC,
+  never submit a purchase, and stay silent while the vault is locked. Card security codes are
+  discarded when legacy records are opened and are no longer collected by the manager. Every item
+  now exposes its authenticated immutable ancestry in the manager, and restoring an earlier version
+  creates a new encrypted revision guarded by the current head so concurrent changes fail safely.
+  End-to-end single-item sharing now produces an authenticated XChaCha20-Poly1305 file plus a
+  separate 256-bit secret, enforces a maximum 30-day policy, rejects metadata tampering, and strips
+  legacy card security codes. The manager creates 24-hour shares, downloads only ciphertext, and
+  keeps the secret explicitly out-of-band. The complete gate passes 37 test files/243 tests, strict
+  typechecking, web and Chrome/Firefox MV3 builds, and
+  artifact/permission/source-map/secret/size/SBOM checks. Fresh 0.10.0 Chrome and Firefox ZIPs were
+  produced. The optional live-CDP smoke rerun was unavailable because no test Chrome was listening
+  on `127.0.0.1:9223`; physical biometrics and live provider consent remain manual gates.

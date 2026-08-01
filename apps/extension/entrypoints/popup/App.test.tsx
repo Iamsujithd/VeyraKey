@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VaultClient } from "@zk-wallet/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, authenticatedAutofillTarget } from "./App";
+import { App, authenticatedAutofillTarget, captureAuthenticationTarget } from "./App";
 
 function client(): VaultClient {
   const locked = {
@@ -38,11 +38,20 @@ describe("extension popup", () => {
     vi.unstubAllGlobals();
   });
 
-  it("wires the shared vault flow to the extension surface", async () => {
+  it("shows a compact page controller instead of the full vault manager", async () => {
     render(<App client={client()} />);
 
-    expect(await screen.findByRole("heading", { name: "Vault locked" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Unlock vault" })).toBeInTheDocument();
+    expect(screen.queryByText(/Check Vault/u)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Vault Manager" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Unlock" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the full vault flow in the separate manager mode", async () => {
+    window.history.replaceState(null, "", "/?mode=manager");
+    render(<App client={client()} />);
+
+    expect(await screen.findByRole("heading", { name: "Unlock" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unlock" })).toBeInTheDocument();
     expect(screen.getByText("Browser extension")).toBeInTheDocument();
   });
 
@@ -95,7 +104,22 @@ describe("extension popup", () => {
     ).toBeNull();
   });
 
-  it("requires fresh biometrics for a selected login even while the manager is unlocked", async () => {
+  it("accepts only strict pending-save authentication targets", () => {
+    expect(
+      captureAuthenticationTarget("?displayHost=example.test&mode=capture-auth&tabId=7"),
+    ).toEqual({ displayHost: "example.test", tabId: 7 });
+    expect(
+      captureAuthenticationTarget(
+        "?displayHost=example.test&extra=bypass&mode=capture-auth&tabId=7",
+      ),
+    ).toBeNull();
+    expect(captureAuthenticationTarget("?displayHost=&mode=capture-auth&tabId=7")).toBeNull();
+    expect(
+      captureAuthenticationTarget("?displayHost=example.test&mode=capture-auth&tabId=-1"),
+    ).toBeNull();
+  });
+
+  it("fills directly from an already unlocked vault without another biometric prompt", async () => {
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
       status: "locked",
@@ -111,7 +135,10 @@ describe("extension popup", () => {
     } as const;
     const unlockWithDevice = vi.fn(async () => unlocked);
     const lock = vi.fn(() => locked);
-    const sendMessage = vi.fn(async () => ({ filled: true, submitted: true }));
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue({ filled: true, submitted: true });
     const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const vaultClient: VaultClient = {
       ...client(),
@@ -127,8 +154,8 @@ describe("extension popup", () => {
           title: "Example",
           type: "login",
           updatedAt: "2026-07-27T00:00:00.000Z",
-          uris: ["https://example.test"],
-          username: "person@example.test",
+          uris: ["https://practicetestautomation.com"],
+          username: "student",
         },
         {
           createdAt: "2026-07-27T00:00:00.000Z",
@@ -139,7 +166,7 @@ describe("extension popup", () => {
           title: "Other Example",
           type: "login",
           updatedAt: "2026-07-27T00:00:00.000Z",
-          uris: ["https://example.test"],
+          uris: ["https://practicetestautomation.com"],
           username: "other@example.test",
         },
       ],
@@ -150,54 +177,43 @@ describe("extension popup", () => {
     window.history.replaceState(
       null,
       "",
-      "/?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+      "/?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fpracticetestautomation.com%2Fpractice-test-login%2F",
     );
 
     render(<App client={vaultClient} />);
-    expect(await screen.findByRole("heading", { name: "Touch ID to fill" })).toBeVisible();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    await waitFor(() => expect(unlockWithDevice).toHaveBeenCalledWith("device-slot"));
-    expect(
-      screen.queryByRole("button", { name: "Use Touch ID or Biometrics" }),
-    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(sendMessage).toHaveBeenCalledWith(7, {
         password: "synthetic-secret",
         submit: false,
-        topUrl: "https://example.test/login",
+        topUrl: "https://practicetestautomation.com/practice-test-login/",
         type: "zk-wallet.biometric-fill.v1",
-        username: "person@example.test",
+        username: "student",
         version: 1,
       }),
     );
-    expect(lock).toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(unlockWithDevice).not.toHaveBeenCalled();
+    expect(lock).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
   });
 
   it("never releases a selected password when fresh biometric verification fails", async () => {
-    const unlocked = {
-      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
-      itemCount: 1,
-      recovery: { status: "verified" },
-      status: "unlocked",
-      unlockedCompartments: [],
-      vaultId: "vault-id",
-    } as const;
     const locked = {
       deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
       status: "locked",
       vaultId: "vault-id",
     } as const;
     const unlockWithDevice = vi.fn(async () => {
-      throw new Error("synthetic biometric cancellation");
+      throw new Error("Biometric verification was canceled or timed out");
     });
     const listItems = vi.fn();
     const lock = vi.fn(() => locked);
     const sendMessage = vi.fn();
     const vaultClient: VaultClient = {
       ...client(),
-      getState: () => unlocked,
-      initialize: async () => unlocked,
+      getState: () => locked,
+      initialize: async () => locked,
       listItems,
       lock,
       unlockWithDevice,
@@ -210,15 +226,48 @@ describe("extension popup", () => {
     );
 
     render(<App client={vaultClient} />);
-    expect(
-      await screen.findByText(
-        "Biometric verification was canceled or is unavailable on this device.",
-      ),
-    ).toBeVisible();
+    expect(await screen.findByLabelText("Master password")).toBeVisible();
+    expect(screen.getByText("Touch ID was canceled.")).toBeVisible();
     expect(unlockWithDevice).toHaveBeenCalledWith("device-slot");
+    expect(screen.queryByRole("button", { name: "Fill with Touch ID" })).not.toBeInTheDocument();
     expect(listItems).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
     expect(lock).toHaveBeenCalled();
+  });
+
+  it("does not offer a meaningless biometric retry for an obsolete device enrollment", async () => {
+    const locked = {
+      deviceUnlock: { available: true, slots: [{ id: "device-slot" }] },
+      status: "locked",
+      vaultId: "vault-id",
+    } as const;
+    const unlockWithDevice = vi.fn(async () => {
+      throw new Error("This biometric enrollment is not available to this app");
+    });
+    const vaultClient: VaultClient = {
+      ...client(),
+      getState: () => locked,
+      initialize: async () => locked,
+      listItems: vi.fn(async () => []),
+      unlockWithDevice,
+    };
+    vi.stubGlobal("browser", { tabs: { sendMessage: vi.fn() } });
+    window.history.replaceState(
+      null,
+      "",
+      "/?credentialId=login-id&mode=biometric-autofill&submit=false&tabId=7&topUrl=https%3A%2F%2Fexample.test%2Flogin",
+    );
+
+    render(<App client={vaultClient} />);
+
+    expect(
+      await screen.findByText(
+        "Touch ID was enrolled in another app or browser profile. Unlock with your master password, then replace this device enrollment in Settings.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Try Touch ID Again" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Master password")).toBeVisible();
+    expect(unlockWithDevice).toHaveBeenCalledTimes(1);
   });
 
   it("ends the biometric flow when the vault has no exact-origin login", async () => {
@@ -451,57 +500,59 @@ describe("extension popup", () => {
     expect(lock).toHaveBeenCalled();
   });
 
-  it("shows an exact-origin confirmation before saving a captured login", async () => {
-    const unlocked = {
-      deviceUnlock: { available: false, slots: [] },
-      itemCount: 0,
-      recovery: { status: "verified" },
-      status: "unlocked",
-      unlockedCompartments: [],
-      vaultId: "vault-id",
-    } as const;
-    const createLogin = vi.fn(async (input) => ({
-      ...input,
-      createdAt: "2026-07-25T00:00:00.000Z",
-      id: "item",
-      revisionId: "revision",
-      type: "login" as const,
-      updatedAt: "2026-07-25T00:00:00.000Z",
-    }));
-    const vaultClient: VaultClient = {
-      ...client(),
-      createLogin,
-      getState: () => unlocked,
-      initialize: async () => unlocked,
-      listItems: async () => [],
-    };
+  it("routes toolbar autofill into the authenticated field-level flow", async () => {
+    const sendMessage = vi.fn(async () => ({ shown: true }));
     vi.stubGlobal("browser", {
-      scripting: {
-        executeScript: vi.fn(async () => [
-          { result: { password: "synthetic-secret", username: "person" } },
-        ]),
+      storage: {
+        local: {
+          get: vi.fn(async () => ({
+            "zk-wallet.autofill-metadata-index.v1": [
+              {
+                id: "login-id",
+                origins: ["https://example.test"],
+                username: "person@example.test",
+              },
+            ],
+          })),
+        },
       },
       tabs: {
         query: vi.fn(async () => [{ id: 7, url: "https://example.test/login" }]),
+        sendMessage,
       },
     });
-    render(<App client={vaultClient} />);
-    await screen.findByRole("heading", { name: "Vault unlocked" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save or Update Password" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(/exact origin example.test/i);
-    expect(createLogin).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Confirm save" }));
+    vi.spyOn(window, "close").mockImplementation(() => undefined);
+    render(<App client={client()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Fill person@example.test" }));
     await waitFor(() =>
-      expect(createLogin).toHaveBeenCalledWith({
-        notes: "",
-        password: "synthetic-secret",
-        title: "example.test",
-        uris: ["https://example.test"],
-        username: "person",
+      expect(sendMessage).toHaveBeenCalledWith(7, {
+        type: "zk-wallet.show-autofill.v1",
+        version: 1,
       }),
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens the full manager in a separate extension tab", async () => {
+    const create = vi.fn(async () => ({ id: 8 }));
+    vi.stubGlobal("browser", {
+      runtime: {
+        getURL: vi.fn(() => "chrome-extension://extension-id/popup.html?mode=manager"),
+      },
+      tabs: {
+        create,
+        query: vi.fn(async () => [{ id: 7, url: "https://example.test/login" }]),
+      },
+    });
+    const close = vi.spyOn(window, "close").mockImplementation(() => undefined);
+
+    render(<App client={client()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Vault Manager" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        url: "chrome-extension://extension-id/popup.html?mode=manager",
+      }),
+    );
+    expect(close).toHaveBeenCalled();
   });
 });

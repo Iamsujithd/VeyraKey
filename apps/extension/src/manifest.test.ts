@@ -3,7 +3,15 @@ import { extensionManifest, manifestForBrowser } from "./manifest";
 
 describe("extension manifest", () => {
   it("identifies the WebAssembly-enabled build", () => {
-    expect(extensionManifest.version).toBe("0.6.11");
+    expect(extensionManifest.version).toBe("0.10.0");
+    expect(extensionManifest.name).toBe("VeyraKey");
+    expect(extensionManifest.action.default_title).toBe("Open VeyraKey");
+    expect(extensionManifest.icons).toEqual({
+      16: "icons/icon-16.png",
+      32: "icons/icon-32.png",
+      48: "icons/icon-48.png",
+      128: "icons/icon-128.png",
+    });
   });
 
   it("requests only browser tools, OAuth identity, storage, and Google API access", () => {
@@ -33,13 +41,14 @@ describe("extension manifest", () => {
   it("declares no data collection for the Firefox build", () => {
     const firefoxManifest = manifestForBrowser("firefox");
 
+    expect(firefoxManifest.permissions).toEqual(["activeTab", "identity", "scripting", "storage"]);
     expect(firefoxManifest).toHaveProperty(
       "browser_specific_settings.gecko.data_collection_permissions.required",
       ["none"],
     );
     expect(firefoxManifest).toHaveProperty(
       "browser_specific_settings.gecko.id",
-      "zero-knowledge-wallet@local.invalid",
+      "veyrakey@local.invalid",
     );
   });
 });

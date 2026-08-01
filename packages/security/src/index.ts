@@ -15,6 +15,7 @@ export {
   copyWithBestEffortClear,
   generatePassphrase,
   generatePassword,
+  generateReadableStrongPassword,
   generateTotp,
   parseOtpAuthQr,
   parseOtpAuthUri,
@@ -43,6 +44,65 @@ export type AutofillDecision =
       readonly allowed: false;
       readonly reason: AutofillRefusal;
     };
+
+export interface AutofillDecisionExplanation {
+  readonly code: "EXACT_ORIGIN_MATCH" | AutofillRefusal;
+  readonly detail: string;
+  readonly severity: "allowed" | "blocked" | "choice-required";
+  readonly title: string;
+}
+
+const AUTOFILL_REFUSAL_EXPLANATIONS: Readonly<
+  Record<AutofillRefusal, Omit<AutofillDecisionExplanation, "code">>
+> = {
+  AMBIGUOUS_ACCOUNT: {
+    detail: "Choose the saved account you want to use.",
+    severity: "choice-required",
+    title: "More than one account matches",
+  },
+  CROSS_ORIGIN_FRAME: {
+    detail: "The password field is embedded from a different website.",
+    severity: "blocked",
+    title: "Embedded sign-in was blocked",
+  },
+  INSECURE_SCHEME: {
+    detail: "Passwords are released only on secure HTTPS pages.",
+    severity: "blocked",
+    title: "This connection is not secure",
+  },
+  INVALID_ORIGIN: {
+    detail: "The page address could not be validated safely.",
+    severity: "blocked",
+    title: "Website address is invalid",
+  },
+  NO_EXACT_MATCH: {
+    detail: "No saved login matches this exact website.",
+    severity: "blocked",
+    title: "No password for this website",
+  },
+  OPAQUE_ORIGIN: {
+    detail: "This document does not have a verifiable website identity.",
+    severity: "blocked",
+    title: "Website identity is unavailable",
+  },
+  USER_ACTION_REQUIRED: {
+    detail: "Select a saved account before its password is released.",
+    severity: "choice-required",
+    title: "Choose an account to fill",
+  },
+};
+
+export function explainAutofillDecision(decision: AutofillDecision): AutofillDecisionExplanation {
+  if (!decision.allowed) {
+    return { code: decision.reason, ...AUTOFILL_REFUSAL_EXPLANATIONS[decision.reason] };
+  }
+  return {
+    code: "EXACT_ORIGIN_MATCH",
+    detail: `The saved login exactly matches ${decision.displayHost}.`,
+    severity: "allowed",
+    title: "Exact website match",
+  };
+}
 
 export interface OriginCredential {
   readonly id: string;
@@ -212,8 +272,17 @@ export function decideCredentialCapture(options: {
       return typeof saved !== "string" && saved.canonicalOrigin === parsed.canonicalOrigin;
     }),
   );
-  const account = exact.find((credential) => credential.username === options.captured.username);
+  const normalizedUsername = options.captured.username.trim().toLocaleLowerCase();
+  const account = exact.find(
+    (credential) => credential.username.trim().toLocaleLowerCase() === normalizedUsername,
+  );
   if (account === undefined) {
+    // Multi-step login pages can clear or detach the username field before their
+    // submit event reaches the extension. A matching password on the exact
+    // origin is still sufficient to prove that this is not a new credential.
+    if (normalizedUsername.length === 0 && exact.some((credential) => credential.passwordMatches)) {
+      return { action: "none", reason: "UNCHANGED" };
+    }
     return {
       action: "save",
       canonicalOrigin: parsed.canonicalOrigin,

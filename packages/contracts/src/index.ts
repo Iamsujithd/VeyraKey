@@ -3,7 +3,7 @@ export const HEALTH_PATH = `/${API_VERSION}/health` as const;
 
 export const HEALTH_RESPONSE = Object.freeze({
   apiVersion: API_VERSION,
-  service: "zk-wallet-api",
+  service: "veyrakey-api",
   status: "ok",
 } as const);
 

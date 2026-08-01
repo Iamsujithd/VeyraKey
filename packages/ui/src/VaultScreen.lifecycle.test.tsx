@@ -74,7 +74,7 @@ describe("VaultScreen lifecycle safety", () => {
       initialize: vi.fn(async () => unlocked),
     });
     const rendered = render(<VaultScreen client={client} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Vault unlocked" });
+    await screen.findByRole("heading", { name: "Passwords" });
 
     rendered.unmount();
 

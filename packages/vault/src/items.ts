@@ -23,6 +23,8 @@ const MAX_TOTP_URI_BYTES = 4_096;
 const MAX_FOLDER_BYTES = 512;
 const MAX_TAG_BYTES = 256;
 const MAX_TAGS = 32;
+const MAX_PROFILE_FIELD_BYTES = 8_192;
+const MAX_CARD_FIELD_BYTES = 8_192;
 
 export interface OrganizationInput {
   readonly favorite?: boolean;
@@ -30,7 +32,12 @@ export interface OrganizationInput {
   readonly tags?: readonly string[];
 }
 
+export type PasswordBreachCheck =
+  | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
+  | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
+
 export interface LoginItemInput extends OrganizationInput {
+  readonly breachCheck?: PasswordBreachCheck;
   readonly notes: string;
   readonly password: string;
   readonly title: string;
@@ -41,6 +48,36 @@ export interface LoginItemInput extends OrganizationInput {
 
 export interface SecureNoteItemInput extends OrganizationInput {
   readonly note: string;
+  readonly title: string;
+}
+
+export interface IdentityProfileItemInput extends OrganizationInput {
+  readonly addressLine1: string;
+  readonly addressLine2: string;
+  readonly age: string;
+  readonly city: string;
+  readonly country: string;
+  readonly dateOfBirth: string;
+  readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly middleName: string;
+  readonly nickname: string;
+  readonly organization: string;
+  readonly phone: string;
+  readonly postalCode: string;
+  readonly region: string;
+  readonly title: string;
+}
+
+export interface PaymentCardItemInput extends OrganizationInput {
+  readonly billingAddress: string;
+  readonly cardNumber: string;
+  readonly cardholderName: string;
+  readonly expiryMonth: string;
+  readonly expiryYear: string;
+  readonly notes: string;
+  readonly securityCode: string;
   readonly title: string;
 }
 
@@ -60,12 +97,30 @@ export interface SecureNoteItem extends SecureNoteItemInput {
   readonly updatedAt: string;
 }
 
-export type VaultItem = LoginItem | SecureNoteItem;
+export interface IdentityProfileItem extends IdentityProfileItemInput {
+  readonly createdAt: string;
+  readonly id: string;
+  readonly revisionId: string;
+  readonly type: "identity-profile";
+  readonly updatedAt: string;
+}
+
+export interface PaymentCardItem extends PaymentCardItemInput {
+  readonly createdAt: string;
+  readonly id: string;
+  readonly revisionId: string;
+  readonly type: "payment-card";
+  readonly updatedAt: string;
+}
+
+export type VaultItem = IdentityProfileItem | LoginItem | PaymentCardItem | SecureNoteItem;
 
 interface StoredItemPayload {
   readonly createdAt: string;
   readonly item:
     | (LoginItemInput & { readonly type: "login" })
+    | (IdentityProfileItemInput & { readonly type: "identity-profile" })
+    | (PaymentCardItemInput & { readonly type: "payment-card" })
     | (SecureNoteItemInput & { readonly type: "secure-note" });
   readonly schemaVersion: 1 | 2;
   readonly updatedAt: string;
@@ -177,7 +232,7 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     !allowedKeys(
       value as Record<string, unknown>,
       ["notes", "password", "title", "uris", "username"],
-      ["favorite", "folder", "tags", "totpUri"],
+      ["breachCheck", "favorite", "folder", "tags", "totpUri"],
     )
   ) {
     throw new ItemError("INVALID_ITEM", "Login data is invalid");
@@ -188,6 +243,7 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     !bounded(input.username, MAX_USERNAME_BYTES) ||
     !bounded(input.password, MAX_PASSWORD_BYTES) ||
     !bounded(input.notes, MAX_LOGIN_NOTES_BYTES) ||
+    (input.breachCheck !== undefined && parsePasswordBreachCheck(input.breachCheck) === null) ||
     (input.totpUri !== undefined && !bounded(input.totpUri, MAX_TOTP_URI_BYTES)) ||
     !Array.isArray(input.uris) ||
     input.uris.length > MAX_URIS ||
@@ -197,6 +253,9 @@ export function parseLoginInput(value: unknown): LoginItemInput {
   }
   return {
     ...parseOrganization(input),
+    ...(input.breachCheck === undefined
+      ? {}
+      : { breachCheck: parsePasswordBreachCheck(input.breachCheck) as PasswordBreachCheck }),
     notes: input.notes,
     password: input.password,
     title: input.title,
@@ -204,6 +263,31 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     uris: [...input.uris],
     username: input.username,
   };
+}
+
+function parsePasswordBreachCheck(value: unknown): PasswordBreachCheck | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const check = value as Record<string, unknown>;
+  if (!bounded(check.checkedAt, 64, false)) return null;
+  if (
+    check.status === "found" &&
+    exactKeys(check, ["checkedAt", "count", "status"]) &&
+    typeof check.count === "number" &&
+    Number.isSafeInteger(check.count) &&
+    check.count > 0
+  ) {
+    return { checkedAt: check.checkedAt, count: check.count, status: "found" };
+  }
+  if (
+    ["not-found", "unavailable"].includes(check.status as string) &&
+    exactKeys(check, ["checkedAt", "status"])
+  ) {
+    return {
+      checkedAt: check.checkedAt,
+      status: check.status as "not-found" | "unavailable",
+    };
+  }
+  return null;
 }
 
 export function parseSecureNoteInput(value: unknown): SecureNoteItemInput {
@@ -224,6 +308,114 @@ export function parseSecureNoteInput(value: unknown): SecureNoteItemInput {
     throw new ItemError("INVALID_ITEM", "Secure note data is invalid");
   }
   return { ...parseOrganization(input), note: input.note, title: input.title };
+}
+
+export function parseIdentityProfileInput(value: unknown): IdentityProfileItemInput {
+  const required = [
+    "addressLine1",
+    "addressLine2",
+    "city",
+    "country",
+    "dateOfBirth",
+    "email",
+    "firstName",
+    "lastName",
+    "middleName",
+    "nickname",
+    "organization",
+    "phone",
+    "postalCode",
+    "region",
+    "title",
+  ] as const;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !allowedKeys(value as Record<string, unknown>, required, ["age", "favorite", "folder", "tags"])
+  ) {
+    throw new ItemError("INVALID_ITEM", "Identity profile data is invalid");
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    !bounded(input.title, MAX_TITLE_BYTES, false) ||
+    required
+      .filter((field) => field !== "title")
+      .some((field) => !bounded(input[field], MAX_PROFILE_FIELD_BYTES)) ||
+    (input.age !== undefined && !bounded(input.age, MAX_PROFILE_FIELD_BYTES))
+  ) {
+    throw new ItemError("INVALID_ITEM", "Identity profile data is invalid");
+  }
+  return {
+    ...parseOrganization(input),
+    addressLine1: input.addressLine1 as string,
+    addressLine2: input.addressLine2 as string,
+    age: (input.age as string | undefined) ?? "",
+    city: input.city as string,
+    country: input.country as string,
+    dateOfBirth: input.dateOfBirth as string,
+    email: input.email as string,
+    firstName: input.firstName as string,
+    lastName: input.lastName as string,
+    middleName: input.middleName as string,
+    nickname: input.nickname as string,
+    organization: input.organization as string,
+    phone: input.phone as string,
+    postalCode: input.postalCode as string,
+    region: input.region as string,
+    title: input.title as string,
+  };
+}
+
+export function parsePaymentCardInput(value: unknown): PaymentCardItemInput {
+  const required = [
+    "billingAddress",
+    "cardNumber",
+    "cardholderName",
+    "expiryMonth",
+    "expiryYear",
+    "notes",
+    "securityCode",
+    "title",
+  ] as const;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !allowedKeys(value as Record<string, unknown>, required, ["favorite", "folder", "tags"])
+  ) {
+    throw new ItemError("INVALID_ITEM", "Payment card data is invalid");
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    !bounded(input.title, MAX_TITLE_BYTES, false) ||
+    required
+      .filter((field) => field !== "title")
+      .some((field) => !bounded(input[field], MAX_CARD_FIELD_BYTES))
+  ) {
+    throw new ItemError("INVALID_ITEM", "Payment card data is invalid");
+  }
+  const cardNumber = (input.cardNumber as string).replace(/[\s-]/gu, "");
+  if (cardNumber.length > 0 && !/^\d{12,19}$/u.test(cardNumber)) {
+    throw new ItemError("INVALID_ITEM", "Payment card number is invalid");
+  }
+  const legacySecurityCode = input.securityCode as string;
+  if (legacySecurityCode.length > 0 && !/^\d{3,8}$/u.test(legacySecurityCode)) {
+    throw new ItemError("INVALID_ITEM", "Payment card security code is invalid");
+  }
+  return {
+    ...parseOrganization(input),
+    billingAddress: input.billingAddress as string,
+    cardNumber: input.cardNumber as string,
+    cardholderName: input.cardholderName as string,
+    expiryMonth: input.expiryMonth as string,
+    expiryYear: input.expiryYear as string,
+    notes: input.notes as string,
+    // Card verification values are deliberately non-persistent. Accepting the legacy
+    // property lets old encrypted records migrate without releasing the value again.
+    securityCode: "",
+    title: input.title as string,
+  };
 }
 
 function parseId(value: unknown): string {
@@ -349,6 +541,8 @@ export async function createEncryptedItemRevision(
   vaultId: string,
   request:
     | { readonly input: LoginItemInput; readonly type: "login" }
+    | { readonly input: IdentityProfileItemInput; readonly type: "identity-profile" }
+    | { readonly input: PaymentCardItemInput; readonly type: "payment-card" }
     | { readonly input: SecureNoteItemInput; readonly type: "secure-note" },
   now: string,
   previous?: VaultItem,
@@ -357,7 +551,13 @@ export async function createEncryptedItemRevision(
   const revisionId = bytesToBase64Url(crypto.randomBytes(ID_BYTES));
   const operation = previous === undefined ? "create" : "update";
   const input =
-    request.type === "login" ? parseLoginInput(request.input) : parseSecureNoteInput(request.input);
+    request.type === "login"
+      ? parseLoginInput(request.input)
+      : request.type === "identity-profile"
+        ? parseIdentityProfileInput(request.input)
+        : request.type === "payment-card"
+          ? parsePaymentCardInput(request.input)
+          : parseSecureNoteInput(request.input);
   const payload: StoredItemPayload = {
     createdAt: previous?.createdAt ?? now,
     item: { ...input, type: request.type } as StoredItemPayload["item"],
@@ -516,6 +716,28 @@ export async function openEncryptedItemRevision(
         id: revision.itemId,
         revisionId: revision.revisionId,
         type: "secure-note",
+        updatedAt: parsed.updatedAt,
+      };
+    }
+    if (domain.type === "identity-profile") {
+      const { type: _type, ...candidate } = domain;
+      return {
+        ...parseIdentityProfileInput(candidate),
+        createdAt: parsed.createdAt,
+        id: revision.itemId,
+        revisionId: revision.revisionId,
+        type: "identity-profile",
+        updatedAt: parsed.updatedAt,
+      };
+    }
+    if (domain.type === "payment-card") {
+      const { type: _type, ...candidate } = domain;
+      return {
+        ...parsePaymentCardInput(candidate),
+        createdAt: parsed.createdAt,
+        id: revision.itemId,
+        revisionId: revision.revisionId,
+        type: "payment-card",
         updatedAt: parsed.updatedAt,
       };
     }

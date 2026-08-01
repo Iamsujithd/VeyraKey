@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "product": "VeyraKey",
+  "packageName": "veyrakey",
+  "version": "0.10.0",
+  "generatedAt": "2026-07-31T16:24:23.261Z",
+  "releaseStatus": "local-release-candidate",
+  "source": {
+    "revision": "1f0d9a494612c0e2db124dccc12b1bd0d9bbac8d",
+    "workingTree": "modified"
+  },
+  "validation": {
+    "command": "CI=true pnpm release:verify",
+    "automatedGates": [
+      "Biome lint and formatting",
+      "strict TypeScript",
+      "unit, property, integration, and chaos tests",
+      "web, Worker, Chrome MV3, and Firefox MV3 production builds",
+      "permission, CSP, source-map, secret, chunk-size, and SBOM checks"
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "apps/api/dist/README.md",
+      "bytes": 113,
+      "sha256": "e0d97e1e64166e4cd000e2585fc088209b3cf58fc753dbeb661c82dde4e358ba"
+    },
+    {
+      "path": "apps/api/dist/index.js",
+      "bytes": 66438,
+      "sha256": "9b7d398bbb96b99696758e483c24d9117a1999d1d9b2534f629627cecf5f08be"
+    },
+    {
+      "path": "apps/extension/.output/veyrakey-extension-0.10.0-chrome.zip",
+      "bytes": 557687,
+      "sha256": "397e821cca2f7e96deb12a9f6f3a12bc2d6c2919be1cda257f68cca0a7bcf2e3"
+    },
+    {
+      "path": "apps/extension/.output/veyrakey-extension-0.10.0-firefox.zip",
+      "bytes": 557745,
+      "sha256": "d5f8ec701f0cc5401750a7f37cb429435c502868d7dd9d87971037ce8c7e9c54"
+    },
+    {
+      "path": "apps/extension/.output/veyrakey-extension-0.10.0-sources.zip",
+      "bytes": 64289,
+      "sha256": "932026b65c63efecd0b32514542fc94037b40e56803cccde00d4358379166e84"
+    },
+    {
+      "path": "apps/web/dist/assets/crypto-runtime-DFX5EOJJ.js",
+      "bytes": 533882,
+      "sha256": "69da3b36cb4a84fb3c2fc3ca1265318cd9405046fd68bfbc654d330d15a12cb6"
+    },
+    {
+      "path": "apps/web/dist/assets/index-Bc5--Psy.css",
+      "bytes": 29484,
+      "sha256": "c38275d936617a63ed0e5cfb57eac41dc3cd723d5b45040e9e574a5cb16c3b99"
+    },
+    {
+      "path": "apps/web/dist/assets/index-ZuceNLzy.js",
+      "bytes": 175743,
+      "sha256": "10bcd4ad2b7dd53a4c091fceb6154e4bfe8fd3fb8b83abe293eee43a24c401b4"
+    },
+    {
+      "path": "apps/web/dist/assets/react-runtime-DYCTgQK0.js",
+      "bytes": 189637,
+      "sha256": "4be3f638c33772247163544bb0db1013d5f266573f335e0d5e5015c7a1ece5e3"
+    },
+    {
+      "path": "apps/web/dist/assets/rolldown-runtime-D9-fqq9M.js",
+      "bytes": 86,
+      "sha256": "a2b9cf4b963756dc2cae1ebdd1c0e51ef5780dd5bf64a55b90e21679c2b2434f"
+    },
+    {
+      "path": "apps/web/dist/index.html",
+      "bytes": 819,
+      "sha256": "b175f88facb7ca484d71d251588c15e08be0cc54f0cab47a1cfdbb3523b4206c"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 174857,
+      "sha256": "eb159431d99f74d8498e15bc0b6d527ee14cfa81f261357954f0474affdf8294"
+    },
+    {
+      "path": "release/external-gates.json",
+      "bytes": 1145,
+      "sha256": "d05639635120a96f9e473dcc46a028d8db100dc1750e679de93c860fe9878124"
+    },
+    {
+      "path": "release/sbom.cdx.json",
+      "bytes": 1497,
+      "sha256": "cef97b69aaecb2f4cca7b5d71b369c75a25edcd9d70d854aec216a10bf934aac"
+    }
+  ],
+  "externalGates": [
+    {
+      "id": "google-oauth",
+      "title": "Google OAuth consent and real-account recovery matrix",
+      "status": "pending",
+      "owner": "release owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#google-oauth"
+    },
+    {
+      "id": "browser-stores",
+      "title": "Chrome and Firefox store signing and acceptance",
+      "status": "pending",
+      "owner": "release owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#browser-stores"
+    },
+    {
+      "id": "physical-biometrics",
+      "title": "Physical Touch ID, Windows Hello, and security-key matrix",
+      "status": "pending",
+      "owner": "device test owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#physical-biometrics"
+    },
+    {
+      "id": "independent-review",
+      "title": "Independent security and accessibility review",
+      "status": "pending",
+      "owner": "independent reviewer",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#independent-review"
+    }
+  ]
+}

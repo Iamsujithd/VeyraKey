@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 
 const endpoint = process.env.ZK_WALLET_CDP ?? "http://127.0.0.1:9223";
 const expectedExtensionId = "lnabfclakgdolgcfallnnhkeeoclfkcf";
-const fixtureHost = "www.google.com";
-const fixtureUrl = `https://${fixtureHost}/robots.txt`;
+const fixtureHost = "example.com";
+const fixtureUrl = `https://${fixtureHost}/`;
 const version = await (await fetch(`${endpoint}/json/version`)).json();
 const socket = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
@@ -83,8 +83,13 @@ if (worker === undefined) {
     url: `chrome-extension://${expectedExtensionId}/popup.html`,
   });
   startupPopupTargetId = popupTarget.targetId;
-  await pause(500);
   const popupSession = await attach(popupTarget.targetId);
+  const popupReady = await waitForValue(
+    popupSession,
+    `typeof chrome !== "undefined" && typeof chrome.runtime?.sendMessage === "function"`,
+    (value) => value === true,
+  );
+  assert.equal(popupReady, true, "Extension popup APIs did not become ready");
   await evaluate(
     popupSession,
     `chrome.runtime.sendMessage({type:"zk-wallet.capture-pending.v1",version:1}).catch(()=>undefined)`,
@@ -145,6 +150,20 @@ assert.equal(contentScriptReady, true, "HTTPS content script did not become read
 await evaluate(
   activePageSession,
   `(() => {
+    const hiddenForm = document.createElement("form");
+    hiddenForm.id = "zk-runtime-hidden-login";
+    hiddenForm.hidden = true;
+    const hiddenUsername = document.createElement("input");
+    hiddenUsername.type = "email";
+    hiddenUsername.autocomplete = "username";
+    hiddenUsername.value = "hidden@example.com";
+    const hiddenPassword = document.createElement("input");
+    hiddenPassword.type = "password";
+    hiddenPassword.autocomplete = "current-password";
+    hiddenPassword.value = "hidden-secret";
+    hiddenForm.append(hiddenUsername, hiddenPassword);
+    document.body.append(hiddenForm);
+
     const form = document.createElement("form");
     form.id = "zk-runtime-idempotent-fill";
     const username = document.createElement("input");
@@ -184,7 +203,12 @@ const repeatedFillState = await evaluate(
   `(() => {
     const form = document.querySelector("#zk-runtime-idempotent-fill");
     const fields = form?.querySelectorAll("input");
+    const hiddenFields = document
+      .querySelector("#zk-runtime-hidden-login")
+      ?.querySelectorAll("input");
     return {
+      hiddenPassword: hiddenFields?.[1]?.value,
+      hiddenUsername: hiddenFields?.[0]?.value,
       inputEvents: globalThis.__zkRuntimeInputEvents,
       password: fields?.[1]?.value,
       username: fields?.[0]?.value
@@ -194,6 +218,8 @@ const repeatedFillState = await evaluate(
 assert.deepEqual(
   repeatedFillState,
   {
+    hiddenPassword: "hidden-secret",
+    hiddenUsername: "hidden@example.com",
     inputEvents: 2,
     password: "runtime-only-secret",
     username: "runtime@example.com",
@@ -204,6 +230,7 @@ await evaluate(
   activePageSession,
   `(() => {
     document.querySelector("#zk-runtime-idempotent-fill")?.remove();
+    document.querySelector("#zk-runtime-hidden-login")?.remove();
     delete globalThis.__zkRuntimeInputEvents;
   })()`,
 );
@@ -220,16 +247,46 @@ await evaluate(
     username.focus();
   })()`,
 );
-const dynamicPromptCount = await waitForValue(
+const unmatchedPromptCount = await waitForValue(
   activePageSession,
   `[...document.documentElement.children].filter(el=>el instanceof HTMLDivElement&&el.style.zIndex==="2147483647").length`,
-  (value) => value === 1,
+  (value) => value === 0,
 );
-assert.equal(dynamicPromptCount, 1, "Dynamic focused login field did not open Passwords");
+assert.equal(unmatchedPromptCount, 0, "An unmatched page opened a generic vault-check prompt");
+await evaluate(
+  workerSession,
+  `chrome.storage.local.set({
+    "zk-wallet.autofill-metadata-index.v1": [{
+      id: "runtime-login",
+      origins: [${JSON.stringify(new URL(fixtureUrl).origin)}],
+      username: "runtime@example.com"
+    }]
+  })`,
+);
 await evaluate(
   activePageSession,
   `(() => {
     document.querySelector("#zk-runtime-dynamic-login")?.remove();
+    const form = document.createElement("form");
+    form.id = "zk-runtime-matching-login";
+    const username = document.createElement("input");
+    username.type = "email";
+    username.autocomplete = "username";
+    form.append(username);
+    document.body.append(form);
+    username.focus();
+  })()`,
+);
+const matchingPromptCount = await waitForValue(
+  activePageSession,
+  `[...document.documentElement.children].filter(el=>el instanceof HTMLDivElement&&el.style.zIndex==="2147483647").length`,
+  (value) => value === 1,
+);
+assert.equal(matchingPromptCount, 1, "An exact-origin saved username was not suggested");
+await evaluate(
+  activePageSession,
+  `(() => {
+    document.querySelector("#zk-runtime-matching-login")?.remove();
     const form = document.createElement("form");
     form.id = "zk-runtime-replaced-login";
     const password = document.createElement("input");
@@ -260,6 +317,7 @@ await evaluate(
 const storageKey = `zk-wallet.pending-capture.v1.${tabId}`;
 const pendingCapture = {
   action: "save",
+  approved: false,
   capture: {
     password: "runtime-only-secret",
     topUrl: fixtureUrl,
@@ -275,6 +333,49 @@ const pendingCapture = {
 await evaluate(
   workerSession,
   `chrome.storage.session.set(${JSON.stringify({ [storageKey]: pendingCapture })})`,
+);
+await send("Page.navigate", { url: `${fixtureUrl}?locked-confirm=1` }, activePageSession).catch(
+  () => undefined,
+);
+await pause(2_000);
+const lockedCapturePromptCount = await waitForValue(
+  activePageSession,
+  `[...document.documentElement.children].filter(el=>el.dataset.zkWalletUi==="true").length`,
+  (value) => value === 1,
+);
+assert.equal(
+  lockedCapturePromptCount,
+  1,
+  "Pending save prompt was not restored before the locked confirmation",
+);
+const saveButtonPoint = await evaluate(
+  activePageSession,
+  `(() => {
+    const host = [...document.documentElement.children].find(el=>el.dataset.zkWalletUi==="true");
+    const rect = host?.getBoundingClientRect();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + 47 } : null;
+  })()`,
+);
+assert(saveButtonPoint, "Pending save prompt did not expose a clickable surface");
+await send(
+  "Input.dispatchMouseEvent",
+  { button: "left", clickCount: 1, type: "mousePressed", ...saveButtonPoint },
+  activePageSession,
+);
+await send(
+  "Input.dispatchMouseEvent",
+  { button: "left", clickCount: 1, type: "mouseReleased", ...saveButtonPoint },
+  activePageSession,
+);
+await pause(500);
+const pendingAfterLockedConfirm = await evaluate(
+  workerSession,
+  `chrome.storage.session.get(${JSON.stringify(storageKey)}).then(value=>value[${JSON.stringify(storageKey)}])`,
+);
+assert.deepEqual(
+  pendingAfterLockedConfirm,
+  { ...pendingCapture, approved: true },
+  "Locked save confirmation did not preserve the approved pending credential",
 );
 
 await send("Target.closeTarget", { targetId: worker.targetId }).catch(() => undefined);
@@ -322,7 +423,7 @@ const persisted = await evaluate(
 );
 assert.deepEqual(
   persisted,
-  pendingCapture,
+  { ...pendingCapture, approved: true },
   "Pending credential capture did not survive worker restart",
 );
 
@@ -330,7 +431,11 @@ const promptHostCount = await evaluate(
   activePageSession,
   `[...document.documentElement.children].filter(el=>el instanceof HTMLDivElement&&el.style.zIndex==="2147483647").length`,
 );
-assert.equal(promptHostCount, 1, "Persistent credential prompt was not restored after navigation");
+assert.equal(
+  promptHostCount,
+  0,
+  "An approved credential was offered for confirmation a second time",
+);
 
 assert.deepEqual(runtimeErrors, [], `Runtime errors were reported: ${runtimeErrors.join("; ")}`);
 socket.close();
@@ -341,10 +446,13 @@ console.log(
       "extension loaded",
       "HTTPS content script injected",
       "repeated credential delivery stayed idempotent",
-      "dynamic username field opened Passwords",
-      "replaced password step refreshed Passwords",
+      "hidden duplicate form did not steal protected fill",
+      "unmatched username field stayed quiet",
+      "exact-origin username opened Passwords",
+      "replaced password step kept one Passwords prompt",
+      "locked save confirmation approved and preserved pending credential",
       "pending credential survived service-worker termination",
-      "save prompt restored after navigation",
+      "approved credential did not ask for confirmation twice",
       "extension origin reported WebAuthn PRF capability",
     ],
   }),

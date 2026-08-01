@@ -53,7 +53,7 @@ The portfolio goal is depth: each shipped capability must have strict security b
 
 ### Password health
 
-- Detect weak, reused, and old passwords locally.
+- Detect weak and reused passwords locally.
 - Check known compromise through HIBP's k-anonymous Pwned Passwords protocol.
 - Never transmit a password or complete password hash.
 - Give clear, actionable recommendations without overstating certainty.

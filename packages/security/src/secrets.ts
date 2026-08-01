@@ -145,6 +145,34 @@ export function generatePassword(options: {
   ).join("");
 }
 
+/**
+ * Generates the readable 20-character default used by the contextual signup
+ * experience: 18 random characters split into three groups by two hyphens.
+ * The character payload always includes lowercase, uppercase, and a digit.
+ */
+export function generateReadableStrongPassword(random: RandomSource): string {
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const characters = Array.from(
+    { length: 16 },
+    () => lowercase[unbiasedIndex(random, lowercase.length)] as string,
+  );
+  characters.push(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[
+      unbiasedIndex(random, "ABCDEFGHIJKLMNOPQRSTUVWXYZ".length)
+    ] as string,
+  );
+  characters.push("0123456789"[unbiasedIndex(random, "0123456789".length)] as string);
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const target = unbiasedIndex(random, index + 1);
+    const current = characters[index] as string;
+    characters[index] = characters[target] as string;
+    characters[target] = current;
+  }
+  return `${characters.slice(0, 6).join("")}-${characters.slice(6, 12).join("")}-${characters
+    .slice(12)
+    .join("")}`;
+}
+
 export function generatePassphrase(options: {
   readonly separator?: string;
   readonly random: RandomSource;

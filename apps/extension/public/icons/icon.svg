@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="VeyraKey">
+  <defs>
+    <linearGradient id="surface" x1="148" y1="72" x2="866" y2="952" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67D8FF" />
+      <stop offset="0.5" stop-color="#0A84FF" />
+      <stop offset="1" stop-color="#5E5CE6" />
+    </linearGradient>
+    <radialGradient id="highlight" cx="0" cy="0" r="1" gradientTransform="translate(286 190) rotate(48) scale(560 420)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.72" />
+      <stop offset="1" stop-color="white" stop-opacity="0" />
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#0759C7" flood-opacity="0.32" />
+    </filter>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="224" fill="url(#surface)" filter="url(#shadow)" />
+  <rect x="84" y="84" width="856" height="856" rx="212" fill="none" stroke="white" stroke-opacity="0.6" stroke-width="16" />
+  <path d="M104 340C222 140 430 86 662 104C486 154 330 282 230 470C174 574 138 688 124 806C72 664 62 474 104 340Z" fill="url(#highlight)" />
+  <g fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="78">
+    <path d="M250 340L380 684L510 340" />
+    <path d="M584 340V684M584 520L770 340M584 520L780 684" />
+  </g>
+</svg>

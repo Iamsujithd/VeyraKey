@@ -1,6 +1,6 @@
 {
-  "name": "@zk-wallet/extension",
-  "version": "0.0.0",
+  "name": "veyrakey-extension",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -24,6 +24,7 @@
     "build:firefox": "wxt build -b firefox --mv3",
     "dev": "wxt -b chrome",
     "postinstall": "wxt prepare",
+    "release:package": "wxt zip -b chrome --mv3 --sources && wxt zip -b firefox --mv3",
     "typecheck": "wxt prepare && tsc --noEmit -p tsconfig.json"
   }
 }

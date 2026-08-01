@@ -6,6 +6,7 @@ import {
   bytesToBase64Url,
   CryptoError,
   type CryptoProvider,
+  DevicePrfError,
   type DevicePrfProvider,
   encodeEnvelopeAad,
   utf8ToBytes,
@@ -18,18 +19,22 @@ import {
   createEncryptedItemRevision,
   createEncryptedTombstone,
   type EncryptedItemRevisionV1,
+  type IdentityProfileItemInput,
   ItemError,
   type ItemRevisionRepository,
   type LoginItemInput,
   openEncryptedItemRevision,
+  type PaymentCardItemInput,
   parseEncryptedItemRevision,
   type SecureNoteItemInput,
   type VaultItem,
 } from "./items";
 import { decodeRecoveryKit, encodeRecoveryKit } from "./recovery";
 import { encryptSearchIndex, searchEncryptedIndex } from "./search";
+import { createEncryptedItemShare } from "./share";
 import {
-  type ActiveDeviceSlotV1,
+  type ActiveDeviceSlot,
+  type ActiveDeviceSlotV2,
   type ChangeMasterPasswordRequest,
   type DeviceSlotV1,
   type DeviceUnlockSummary,
@@ -57,6 +62,7 @@ import {
   type VaultHeaderRepository,
   type VaultHeaderV1,
   type VaultHeaderV2,
+  type VaultItemHistoryEntry,
   type VaultPublicState,
   type WrappedKeySetV1,
 } from "./types";
@@ -100,6 +106,9 @@ const unavailableDevicePrf: DevicePrfProvider = {
   async getCapability() {
     return "unsupported";
   },
+  getScope() {
+    return null;
+  },
 };
 
 interface KeySetBytes {
@@ -142,8 +151,8 @@ function invalidRecovery(): VaultError {
   );
 }
 
-function deviceUnlockFailed(): VaultError {
-  return new VaultError("DEVICE_UNLOCK_FAILED", "Device unlock failed");
+function deviceUnlockFailed(message = "Device unlock failed"): VaultError {
+  return new VaultError("DEVICE_UNLOCK_FAILED", message);
 }
 
 function isCryptoUnavailable(error: unknown): boolean {
@@ -472,10 +481,15 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
   }
 
   function deviceSummary(header: VaultHeader): DeviceUnlockSummary {
+    const currentScope = devicePrf.getScope?.() ?? null;
     const slots =
       header.version === 2
         ? header.deviceSlots
-            .filter((slot): slot is ActiveDeviceSlotV1 => slot.status === "active")
+            .filter(
+              (slot): slot is ActiveDeviceSlot =>
+                slot.status === "active" &&
+                (currentScope === null || (slot.version === 2 && slot.scope === currentScope)),
+            )
             .map((slot) => ({ id: slot.id }))
         : [];
     return { available: deviceAvailable, slots };
@@ -1181,20 +1195,20 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
     }
   }
 
-  function activeDeviceSlot(header: VaultHeaderV2, slotId: string): ActiveDeviceSlotV1 {
+  function activeDeviceSlot(header: VaultHeaderV2, slotId: string): ActiveDeviceSlot {
     const slot = header.deviceSlots.find((candidate) => candidate.id === slotId);
     if (slot?.status === "revoked") {
       throw new VaultError("DEVICE_SLOT_REVOKED", "This device slot has been revoked");
     }
     if (slot === undefined) throw deviceUnlockFailed();
+    const currentScope = devicePrf.getScope?.() ?? null;
+    if (currentScope !== null && (slot.version !== 2 || slot.scope !== currentScope)) {
+      throw deviceUnlockFailed("This biometric enrollment is not available to this app");
+    }
     return slot;
   }
 
-  async function evaluateDeviceSlot(slot: ActiveDeviceSlotV1): Promise<Uint8Array> {
-    await refreshCapability();
-    if (!deviceAvailable) {
-      throw new VaultError("DEVICE_UNLOCK_UNAVAILABLE", "Device unlock is unavailable");
-    }
+  async function evaluateDeviceSlot(slot: ActiveDeviceSlot): Promise<Uint8Array> {
     let prfInput: Uint8Array | null = null;
     try {
       prfInput = base64UrlToBytes(slot.prfInput);
@@ -1209,6 +1223,7 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
       return output;
     } catch (error) {
       if (error instanceof VaultError && error.code === "DEVICE_UNLOCK_UNAVAILABLE") throw error;
+      if (error instanceof DevicePrfError) throw deviceUnlockFailed(error.message);
       throw deviceUnlockFailed();
     } finally {
       if (prfInput !== null) zeroBytes(prfInput);
@@ -1319,6 +1334,8 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
   async function writeItem(
     request:
       | { readonly input: LoginItemInput; readonly type: "login" }
+      | { readonly input: IdentityProfileItemInput; readonly type: "identity-profile" }
+      | { readonly input: PaymentCardItemInput; readonly type: "payment-card" }
       | { readonly input: SecureNoteItemInput; readonly type: "secure-note" },
     itemId?: string,
     expectedRevisionId?: string,
@@ -1368,6 +1385,92 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
     itemCount = (await loadItems()).length;
     startAutoLockTimer();
     return opened;
+  }
+
+  function itemRequest(
+    item: VaultItem,
+  ):
+    | { readonly input: LoginItemInput; readonly type: "login" }
+    | { readonly input: IdentityProfileItemInput; readonly type: "identity-profile" }
+    | { readonly input: PaymentCardItemInput; readonly type: "payment-card" }
+    | { readonly input: SecureNoteItemInput; readonly type: "secure-note" } {
+    if (item.type === "login") {
+      const {
+        createdAt: _createdAt,
+        id: _id,
+        revisionId: _revisionId,
+        type: _type,
+        updatedAt: _updatedAt,
+        ...input
+      } = item;
+      return { input, type: "login" };
+    }
+    if (item.type === "identity-profile") {
+      const {
+        createdAt: _createdAt,
+        id: _id,
+        revisionId: _revisionId,
+        type: _type,
+        updatedAt: _updatedAt,
+        ...input
+      } = item;
+      return { input, type: "identity-profile" };
+    }
+    if (item.type === "payment-card") {
+      const {
+        createdAt: _createdAt,
+        id: _id,
+        revisionId: _revisionId,
+        type: _type,
+        updatedAt: _updatedAt,
+        ...input
+      } = item;
+      return { input, type: "payment-card" };
+    }
+    const {
+      createdAt: _createdAt,
+      id: _id,
+      revisionId: _revisionId,
+      type: _type,
+      updatedAt: _updatedAt,
+      ...input
+    } = item;
+    return { input, type: "secure-note" };
+  }
+
+  async function itemHistory(itemId: string): Promise<VaultItemHistoryEntry[]> {
+    const header = await requireUnlockedHeader();
+    if (rootKey === null) throw new VaultError("VAULT_LOCKED", "The vault is locked");
+    const activeRoot = rootKey;
+    const repository = requireItemRepository();
+    if (repository.listRevisions === undefined) {
+      throw new ItemError("ITEM_CORRUPT", "Encrypted item history is unavailable");
+    }
+    const heads = (await repository.listHeads()).map(parseEncryptedItemRevision);
+    const head = heads.find((revision) => revision.itemId === itemId);
+    if (head === undefined) throw new ItemError("ITEM_NOT_FOUND", "The item does not exist");
+    const revisions = (await repository.listRevisions())
+      .map(parseEncryptedItemRevision)
+      .filter((revision) => revision.itemId === itemId);
+    const byId = new Map(revisions.map((revision) => [revision.revisionId, revision]));
+    const history: VaultItemHistoryEntry[] = [];
+    let cursor: EncryptedItemRevisionV1 | undefined = head;
+    while (cursor !== undefined) {
+      if (state.status !== "unlocked" || rootKey !== activeRoot) {
+        throw new VaultError("VAULT_LOCKED", "The vault is locked");
+      }
+      history.push({
+        item: await openEncryptedItemRevision(crypto, activeRoot, header.vaultId, cursor),
+        operation: cursor.operation,
+        parentRevisionId: cursor.parentRevisionId,
+        revisionId: cursor.revisionId,
+      });
+      cursor = cursor.parentRevisionId === null ? undefined : byId.get(cursor.parentRevisionId);
+      if (cursor === undefined && history.at(-1)?.parentRevisionId !== null) {
+        throw new ItemError("ITEM_CORRUPT", "Encrypted item history is incomplete");
+      }
+    }
+    return history;
   }
 
   return {
@@ -1429,8 +1532,16 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
       });
     },
 
+    async createIdentityProfile(input) {
+      return exclusive(() => writeItem({ input, type: "identity-profile" }));
+    },
+
     async createLogin(input) {
       return exclusive(() => writeItem({ input, type: "login" }));
+    },
+
+    async createPaymentCard(input) {
+      return exclusive(() => writeItem({ input, type: "payment-card" }));
     },
 
     async createSecureNote(input) {
@@ -1545,6 +1656,28 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
       });
     },
 
+    async createItemShare(itemId, expiresAt) {
+      return exclusive(async () => {
+        await requireUnlockedHeader();
+        const item = (await loadItems()).find((candidate) => candidate.id === itemId);
+        if (item === undefined) {
+          throw new ItemError("ITEM_NOT_FOUND", "The item does not exist");
+        }
+        const share = await createEncryptedItemShare(
+          crypto,
+          item,
+          expiresAt,
+          new Date(now()).toISOString(),
+        );
+        startAutoLockTimer();
+        return share;
+      });
+    },
+
+    async listItemHistory(itemId) {
+      return exclusive(() => itemHistory(itemId));
+    },
+
     async enrollDevice(masterPassword) {
       return exclusive(async () => {
         const operationGeneration = sessionGeneration;
@@ -1558,10 +1691,6 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
             "RECOVERY_VERIFICATION_REQUIRED",
             "Verify the Recovery Kit before enrolling a device",
           );
-        }
-        await refreshCapability();
-        if (!deviceAvailable) {
-          throw new VaultError("DEVICE_UNLOCK_UNAVAILABLE", "Device unlock is unavailable");
         }
         if (header.deviceSlots.length >= MAXIMUM_DEVICE_SLOTS) {
           throw new VaultError("DEVICE_UNLOCK_FAILED", "No additional device slot is available");
@@ -1598,22 +1727,36 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
             throw deviceUnlockFailed();
           }
           const id = bytesToBase64Url(crypto.randomBytes(OPAQUE_ID_BYTES));
-          const slot: ActiveDeviceSlotV1 = {
-            credentialId,
+          const wrappedKeys = await sealWrappedKeys(
+            prfOutput,
+            "webauthn-prf",
+            keys,
+            header.vaultId,
+            vaultIdBytes,
             id,
-            prfInput: bytesToBase64Url(prfInput),
-            status: "active",
-            type: "webauthn-prf",
-            version: 1,
-            wrappedKeys: await sealWrappedKeys(
-              prfOutput,
-              "webauthn-prf",
-              keys,
-              header.vaultId,
-              vaultIdBytes,
-              id,
-            ),
-          };
+          );
+          const scope = devicePrf.getScope?.() ?? null;
+          const slot: ActiveDeviceSlot =
+            scope === null
+              ? {
+                  credentialId,
+                  id,
+                  prfInput: bytesToBase64Url(prfInput),
+                  status: "active",
+                  type: "webauthn-prf",
+                  version: 1,
+                  wrappedKeys,
+                }
+              : ({
+                  credentialId,
+                  id,
+                  prfInput: bytesToBase64Url(prfInput),
+                  scope,
+                  status: "active",
+                  type: "webauthn-prf",
+                  version: 2,
+                  wrappedKeys,
+                } satisfies ActiveDeviceSlotV2);
           const next: VaultHeaderV2 = {
             ...header,
             deviceSlots: [...header.deviceSlots, slot],
@@ -1625,6 +1768,10 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
           return publish(unlockedState(committed, true));
         } catch (error) {
           if (error instanceof VaultError) throw error;
+          if (error instanceof DevicePrfError && error.reason === "unsupported") {
+            throw new VaultError("DEVICE_UNLOCK_UNAVAILABLE", error.message);
+          }
+          if (error instanceof DevicePrfError) throw deviceUnlockFailed(error.message);
           throw deviceUnlockFailed();
         } finally {
           zeroBytes(baseKey);
@@ -2264,8 +2411,63 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
       });
     },
 
+    async restoreItemRevision(itemId, historicalRevisionId, expectedHeadRevisionId) {
+      return exclusive(async () => {
+        const header = await requireUnlockedHeader();
+        if (rootKey === null) throw new VaultError("VAULT_LOCKED", "The vault is locked");
+        const activeRoot = rootKey;
+        const history = await itemHistory(itemId);
+        if (history[0]?.revisionId !== expectedHeadRevisionId) {
+          throw new ItemError("ITEM_WRITE_CONFLICT", "The item changed concurrently");
+        }
+        const historical = history.find((entry) => entry.revisionId === historicalRevisionId);
+        if (historical?.item === null || historical === undefined) {
+          throw new ItemError("ITEM_NOT_FOUND", "The historical item revision does not exist");
+        }
+        const previous = { ...historical.item, revisionId: expectedHeadRevisionId } as VaultItem;
+        const revision = await createEncryptedItemRevision(
+          crypto,
+          activeRoot,
+          header.vaultId,
+          itemRequest(historical.item),
+          new Date(now()).toISOString(),
+          previous,
+        );
+        try {
+          await requireItemRepository().commit(expectedHeadRevisionId, revision);
+        } catch {
+          throw new ItemError("ITEM_WRITE_CONFLICT", "The item changed concurrently");
+        }
+        if (state.status !== "unlocked" || rootKey !== activeRoot) {
+          throw new VaultError("VAULT_LOCKED", "The vault is locked");
+        }
+        const opened = await openEncryptedItemRevision(
+          crypto,
+          activeRoot,
+          header.vaultId,
+          revision,
+        );
+        if (opened === null) throw new ItemError("ITEM_CORRUPT", "Encrypted item data is invalid");
+        itemCount = (await loadItems()).length;
+        startAutoLockTimer();
+        return opened;
+      });
+    },
+
+    async updateIdentityProfile(itemId, expectedRevisionId, input) {
+      return exclusive(() =>
+        writeItem({ input, type: "identity-profile" }, itemId, expectedRevisionId),
+      );
+    },
+
     async updateLogin(itemId, expectedRevisionId, input) {
       return exclusive(() => writeItem({ input, type: "login" }, itemId, expectedRevisionId));
+    },
+
+    async updatePaymentCard(itemId, expectedRevisionId, input) {
+      return exclusive(() =>
+        writeItem({ input, type: "payment-card" }, itemId, expectedRevisionId),
+      );
     },
 
     async updateSecureNote(itemId, expectedRevisionId, input) {

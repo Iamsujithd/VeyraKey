@@ -5,6 +5,7 @@ import {
   captureCredentialFields,
   decideAutofill,
   decideCredentialCapture,
+  explainAutofillDecision,
   fillCredentialFields,
   findCredentialFields,
 } from "./index";
@@ -78,6 +79,38 @@ describe("exact-origin autofill policy", () => {
       }),
     ).toEqual({ allowed: false, reason: "AMBIGUOUS_ACCOUNT" });
   });
+
+  it("provides stable, secret-free explanations for every policy outcome", () => {
+    const allowed = decideAutofill({
+      credentials: [credential],
+      frameUrl: "https://example.test/login",
+      topUrl: "https://example.test/login",
+      userInitiated: true,
+    });
+    expect(explainAutofillDecision(allowed)).toEqual({
+      code: "EXACT_ORIGIN_MATCH",
+      detail: "The saved login exactly matches example.test.",
+      severity: "allowed",
+      title: "Exact website match",
+    });
+
+    const refusalCases = [
+      "AMBIGUOUS_ACCOUNT",
+      "CROSS_ORIGIN_FRAME",
+      "INSECURE_SCHEME",
+      "INVALID_ORIGIN",
+      "NO_EXACT_MATCH",
+      "OPAQUE_ORIGIN",
+      "USER_ACTION_REQUIRED",
+    ] as const;
+    for (const reason of refusalCases) {
+      const explanation = explainAutofillDecision({ allowed: false, reason });
+      expect(explanation.code).toBe(reason);
+      expect(explanation.title.length).toBeGreaterThan(0);
+      expect(explanation.detail.length).toBeGreaterThan(0);
+      expect(JSON.stringify(explanation)).not.toContain("synthetic-secret");
+    }
+  });
 });
 
 describe("credential capture prompts", () => {
@@ -115,6 +148,33 @@ describe("credential capture prompts", () => {
             username: "person",
           },
         ],
+      }),
+    ).toEqual({ action: "none", reason: "UNCHANGED" });
+  });
+
+  it("deduplicates usernames case-insensitively and tolerates a cleared username field", () => {
+    const credential = {
+      id: "existing",
+      passwordMatches: true,
+      uris: ["https://example.test"],
+      username: "Person@Example.test",
+    };
+    const base = {
+      credentials: [credential],
+      frameUrl: "https://example.test/login",
+      topUrl: "https://example.test/login",
+    };
+
+    expect(
+      decideCredentialCapture({
+        ...base,
+        captured: { password: "same-secret", username: " person@example.TEST " },
+      }),
+    ).toEqual({ action: "none", reason: "UNCHANGED" });
+    expect(
+      decideCredentialCapture({
+        ...base,
+        captured: { password: "same-secret", username: "" },
       }),
     ).toEqual({ action: "none", reason: "UNCHANGED" });
   });

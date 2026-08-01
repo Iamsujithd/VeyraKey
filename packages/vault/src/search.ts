@@ -46,7 +46,22 @@ function build(items: readonly VaultItem[]): SearchIndexV1 {
             item.title,
             item.folder ?? "",
             ...(item.tags ?? []),
-            item.type === "login" ? item.username : "",
+            item.type === "login"
+              ? item.username
+              : item.type === "identity-profile"
+                ? [
+                    item.firstName,
+                    item.middleName,
+                    item.lastName,
+                    item.nickname,
+                    item.email,
+                    item.phone,
+                    item.city,
+                    item.country,
+                  ].join(" ")
+                : item.type === "payment-card"
+                  ? [item.cardholderName, item.cardNumber.slice(-4)].join(" ")
+                  : "",
           ].join(" "),
         ),
       ]),

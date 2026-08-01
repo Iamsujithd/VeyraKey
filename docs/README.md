@@ -1,6 +1,6 @@
 # Documentation Index
 
-This directory is the approved design and delivery context for the focused zero-knowledge password-manager portfolio v1. Feature implementation is complete through Roadmap Task 13; Task 14 release evidence is in review with external gates explicitly open.
+This directory is the approved design and delivery context for the focused zero-knowledge password-manager portfolio v1. Feature implementation and the local Task 14 release candidate are complete; public-release evidence remains explicitly external.
 
 The authoritative v1 scope is defined by `00`, `01`, `17`–`21`, `29`, and `30`. Earlier subsystem documents for documents, digital credentials, DigiLocker, Secure Send, WebDAV, software passkeys, SSH, payments, and other broad capabilities are retained as future-design research; they are not current v1 commitments. See [`32-future-work.md`](32-future-work.md).
 
@@ -47,6 +47,12 @@ The authoritative v1 scope is defined by `00`, `01`, `17`–`21`, `29`, and `30`
 33. [`32-future-work.md`](32-future-work.md) — deferred expansion ideas outside the focused portfolio v1.
 34. [`33-v1-release-runbook.md`](33-v1-release-runbook.md) — reproducible validation, smoke, migration, rollback, and external gates.
 35. [`34-hardening-evidence.md`](34-hardening-evidence.md) — security, resilience, accessibility, performance, and dependency evidence.
+36. [`35-apple-passwords-extension-benchmark.md`](35-apple-passwords-extension-benchmark.md) — contextual interaction and visual benchmark.
+37. [`36-enterprise-password-manager-status.md`](36-enterprise-password-manager-status.md) — implemented capabilities, security boundaries, and native-provider gates.
+38. [`37-ui-qa-inventory.md`](37-ui-qa-inventory.md) — UI coverage contract and verified manager/runtime QA evidence.
+39. [`38-portfolio-flagship-roadmap.md`](38-portfolio-flagship-roadmap.md) — five flagship systems, mandatory foundations, and measurable release gates.
+40. [`39-browser-store-submission.md`](39-browser-store-submission.md) — store listing copy, permission rationale, reviewer flow, and artifact inventory.
+41. [`40-external-release-evidence.md`](40-external-release-evidence.md) — OAuth, signing, physical-biometric, and independent-review evidence ceremonies.
 
 ## Source of truth hierarchy
 

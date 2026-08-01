@@ -10,7 +10,7 @@ import {
   checkPwnedPassword,
   copyWithBestEffortClear,
   generatePassphrase,
-  generatePassword,
+  generateReadableStrongPassword,
   generateTotp,
   type PasswordHealthFinding,
   type PwnedPasswordResult,
@@ -55,13 +55,69 @@ export type StepUpCredential =
   | { readonly recoveryKit: string; readonly type: "recovery-kit" }
   | { readonly slotId: string; readonly type: "device" };
 
+export interface IdentityProfileInputView {
+  readonly addressLine1: string;
+  readonly addressLine2: string;
+  readonly age: string;
+  readonly city: string;
+  readonly country: string;
+  readonly dateOfBirth: string;
+  readonly email: string;
+  readonly favorite?: boolean;
+  readonly firstName: string;
+  readonly folder?: string;
+  readonly lastName: string;
+  readonly middleName: string;
+  readonly nickname: string;
+  readonly organization: string;
+  readonly phone: string;
+  readonly postalCode: string;
+  readonly region: string;
+  readonly tags?: readonly string[];
+  readonly title: string;
+}
+
+export interface PaymentCardInputView {
+  readonly billingAddress: string;
+  readonly cardNumber: string;
+  readonly cardholderName: string;
+  readonly expiryMonth: string;
+  readonly expiryYear: string;
+  readonly favorite?: boolean;
+  readonly folder?: string;
+  readonly notes: string;
+  readonly securityCode: string;
+  readonly tags?: readonly string[];
+  readonly title: string;
+}
+
+export interface VaultItemHistoryEntryView {
+  readonly item: VaultItemView | null;
+  readonly operation: "create" | "delete" | "update";
+  readonly parentRevisionId?: string | null;
+  readonly revisionId: string;
+}
+
+interface CreatedItemShareView {
+  readonly bundle: {
+    readonly expiresAt: string;
+    readonly shareId: string;
+  };
+  readonly secret: string;
+}
+
 export interface VaultClient {
   changeMasterPassword(request: {
     readonly currentPassword: string;
     readonly newPassword: string;
   }): Promise<VaultViewState>;
   createVault(masterPassword: string): Promise<VaultViewState>;
+  createItemShare?(itemId: string, expiresAt: string): Promise<CreatedItemShareView>;
+  createIdentityProfile?(input: IdentityProfileInputView): Promise<VaultItemView>;
   createLogin?(input: {
+    readonly breachCheck?:
+      | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
+      | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
     readonly favorite?: boolean;
     readonly folder?: string;
     readonly notes: string;
@@ -72,6 +128,7 @@ export interface VaultClient {
     readonly uris: readonly string[];
     readonly username: string;
   }): Promise<VaultItemView>;
+  createPaymentCard?(input: PaymentCardInputView): Promise<VaultItemView>;
   createSecureNote?(input: {
     readonly favorite?: boolean;
     readonly folder?: string;
@@ -93,11 +150,20 @@ export interface VaultClient {
           readonly type: "login";
         }
       | {
+          readonly input: IdentityProfileInputView;
+          readonly type: "identity-profile";
+        }
+      | {
           readonly input: Parameters<NonNullable<VaultClient["createSecureNote"]>>[0];
           readonly type: "secure-note";
         }
+      | {
+          readonly input: PaymentCardInputView;
+          readonly type: "payment-card";
+        }
     )[],
   ): Promise<readonly VaultItemView[]>;
+  listItemHistory?(itemId: string): Promise<readonly VaultItemHistoryEntryView[]>;
   listItems?(): Promise<readonly VaultItemView[]>;
   lock(): VaultViewState;
   recordActivity(): void;
@@ -122,6 +188,11 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultViewState>;
+  restoreItemRevision?(
+    itemId: string,
+    historicalRevisionId: string,
+    expectedHeadRevisionId: string,
+  ): Promise<VaultItemView>;
   revokeDevice(slotId: string): Promise<VaultViewState>;
   searchItems?(query: string): Promise<readonly VaultItemView[]>;
   stepUpCompartment(
@@ -138,6 +209,9 @@ export interface VaultClient {
     itemId: string,
     expectedRevisionId: string,
     input: {
+      readonly breachCheck?:
+        | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
+        | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
       readonly favorite?: boolean;
       readonly folder?: string;
       readonly notes: string;
@@ -148,6 +222,16 @@ export interface VaultClient {
       readonly uris: readonly string[];
       readonly username: string;
     },
+  ): Promise<VaultItemView>;
+  updateIdentityProfile?(
+    itemId: string,
+    expectedRevisionId: string,
+    input: IdentityProfileInputView,
+  ): Promise<VaultItemView>;
+  updatePaymentCard?(
+    itemId: string,
+    expectedRevisionId: string,
+    input: PaymentCardInputView,
   ): Promise<VaultItemView>;
   updateSecureNote?(
     itemId: string,
@@ -175,7 +259,24 @@ export interface VaultSyncResult {
 }
 
 export type VaultItemView =
+  | (IdentityProfileInputView & {
+      readonly createdAt: string;
+      readonly id: string;
+      readonly revisionId: string;
+      readonly type: "identity-profile";
+      readonly updatedAt: string;
+    })
+  | (PaymentCardInputView & {
+      readonly createdAt: string;
+      readonly id: string;
+      readonly revisionId: string;
+      readonly type: "payment-card";
+      readonly updatedAt: string;
+    })
   | {
+      readonly breachCheck?:
+        | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
+        | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
       readonly createdAt: string;
       readonly favorite?: boolean;
       readonly folder?: string;
@@ -203,6 +304,70 @@ export type VaultItemView =
       readonly type: "secure-note";
       readonly updatedAt: string;
     };
+
+type ProfileField = Exclude<
+  keyof IdentityProfileInputView,
+  "favorite" | "folder" | "tags" | "title"
+>;
+
+const EMPTY_PROFILE: Readonly<Record<ProfileField, string>> = {
+  addressLine1: "",
+  addressLine2: "",
+  age: "",
+  city: "",
+  country: "",
+  dateOfBirth: "",
+  email: "",
+  firstName: "",
+  lastName: "",
+  middleName: "",
+  nickname: "",
+  organization: "",
+  phone: "",
+  postalCode: "",
+  region: "",
+};
+
+const EMPTY_PAYMENT_CARD: PaymentCardInputView = {
+  billingAddress: "",
+  cardNumber: "",
+  cardholderName: "",
+  expiryMonth: "",
+  expiryYear: "",
+  notes: "",
+  securityCode: "",
+  title: "",
+};
+
+const PROFILE_FIELDS: readonly {
+  readonly autocomplete: string;
+  readonly key: ProfileField;
+  readonly label: string;
+  readonly type?: string;
+}[] = [
+  { autocomplete: "given-name", key: "firstName", label: "First name" },
+  { autocomplete: "additional-name", key: "middleName", label: "Middle name" },
+  { autocomplete: "family-name", key: "lastName", label: "Last name" },
+  { autocomplete: "nickname", key: "nickname", label: "Nickname" },
+  { autocomplete: "email", key: "email", label: "Email", type: "email" },
+  { autocomplete: "tel", key: "phone", label: "Phone", type: "tel" },
+  { autocomplete: "organization", key: "organization", label: "Organization" },
+  { autocomplete: "bday", key: "dateOfBirth", label: "Date of birth", type: "date" },
+  { autocomplete: "off", key: "age", label: "Age", type: "number" },
+  { autocomplete: "address-line1", key: "addressLine1", label: "Address line 1" },
+  { autocomplete: "address-line2", key: "addressLine2", label: "Address line 2" },
+  { autocomplete: "address-level2", key: "city", label: "City" },
+  { autocomplete: "address-level1", key: "region", label: "State / region" },
+  { autocomplete: "postal-code", key: "postalCode", label: "Postal code" },
+  { autocomplete: "country-name", key: "country", label: "Country" },
+] as const;
+
+const PRIMARY_PROFILE_FIELD_KEYS = new Set<ProfileField>([
+  "email",
+  "firstName",
+  "lastName",
+  "phone",
+]);
 
 export interface VaultScreenProps {
   readonly client: VaultClient;
@@ -233,31 +398,18 @@ type Operation =
   | "unlock"
   | null;
 
-function Header({ surface, state }: { readonly state: ScreenState; readonly surface: string }) {
-  const status =
-    state.status === "unlocked"
-      ? "Unlocked locally"
-      : state.status === "preparing"
-        ? "Checking local vault"
-        : state.status === "load-failed"
-          ? "Local vault unavailable"
-          : "Client-side protection";
-
+function Header({ surface }: { readonly surface: string }) {
   return (
     <header className="vault-header">
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true">
-          ZK
+          VK
         </span>
         <span className="brand-copy">
-          <strong>Zero-Knowledge Wallet</strong>
+          <strong>VeyraKey</strong>
           <span>{surface}</span>
         </span>
       </div>
-      <span className="foundation-status">
-        <span className="status-dot" aria-hidden="true" />
-        {status}
-      </span>
     </header>
   );
 }
@@ -309,6 +461,21 @@ function operationError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function deviceEnrollmentError(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (
+      message.length > 0 &&
+      message.length <= 180 &&
+      !/[\r\n]/u.test(message) &&
+      !/access[_ -]?token|authorization:\s*bearer/iu.test(message)
+    ) {
+      return message;
+    }
+  }
+  return fallback;
+}
+
 function cloudOperationError(provider: string, error: unknown, fallback: string): string {
   if (error instanceof Error) {
     const message = error.message.trim();
@@ -324,7 +491,22 @@ function cloudOperationError(provider: string, error: unknown, fallback: string)
   return fallback;
 }
 
+function persistedBreachCheck(result: PwnedPasswordResult) {
+  const checkedAt = new Date().toISOString();
+  return result.status === "found"
+    ? ({ checkedAt, count: result.count, status: "found" } as const)
+    : ({ checkedAt, status: result.status } as const);
+}
+
 export function VaultScreen({ client, providerConfiguration, surface }: VaultScreenProps) {
+  const defaultSetupDestination: "google" | "local" | "onedrive" =
+    client.syncGoogleDrive !== undefined &&
+    (providerConfiguration?.googleClientId?.trim().length ?? 0) > 0
+      ? "google"
+      : client.syncOneDrive !== undefined &&
+          (providerConfiguration?.microsoftClientId?.trim().length ?? 0) > 0
+        ? "onedrive"
+        : "local";
   const [screenState, setScreenState] = useState<ScreenState>({ status: "preparing" });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [operation, setOperation] = useState<Operation>(null);
@@ -333,6 +515,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
   const [recoveryKitInput, setRecoveryKitInput] = useState("");
   const [showRecoveryUnlock, setShowRecoveryUnlock] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
+  const [setupDestination, setSetupDestination] = useState<"google" | "local" | "onedrive">(
+    defaultSetupDestination,
+  );
   const [encryptedByosState, setEncryptedByosState] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
@@ -349,8 +534,17 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
   const [newPasswordConfirmation, setNewPasswordConfirmation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<readonly VaultItemView[]>([]);
-  const [itemType, setItemType] = useState<"login" | "secure-note">("login");
+  const [historyItemId, setHistoryItemId] = useState("");
+  const [itemHistory, setItemHistory] = useState<readonly VaultItemHistoryEntryView[]>([]);
+  const [createdShare, setCreatedShare] = useState<{
+    readonly title: string;
+    readonly value: CreatedItemShareView;
+  } | null>(null);
+  const [itemType, setItemType] = useState<
+    "identity-profile" | "login" | "payment-card" | "secure-note"
+  >("login");
   const [editingItem, setEditingItem] = useState<VaultItemView | null>(null);
+  const [itemEditorOpen, setItemEditorOpen] = useState(false);
   const [itemTitle, setItemTitle] = useState("");
   const [itemUsername, setItemUsername] = useState("");
   const [itemPassword, setItemPassword] = useState("");
@@ -360,6 +554,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
   const [itemFolder, setItemFolder] = useState("");
   const [itemTags, setItemTags] = useState("");
   const [itemFavorite, setItemFavorite] = useState(false);
+  const [profileFields, setProfileFields] =
+    useState<Readonly<Record<ProfileField, string>>>(EMPTY_PROFILE);
+  const [paymentCard, setPaymentCard] = useState<PaymentCardInputView>(EMPTY_PAYMENT_CARD);
   const [itemSearch, setItemSearch] = useState("");
   const [totpCodes, setTotpCodes] = useState<Readonly<Record<string, string>>>({});
   const [totpImportStatus, setTotpImportStatus] = useState("");
@@ -374,6 +571,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     {},
   );
   const [healthStatus, setHealthStatus] = useState("");
+  const [selectedHealthItemId, setSelectedHealthItemId] = useState("");
   const googleClientId = providerConfiguration?.googleClientId?.trim() ?? "";
   const microsoftClientId = providerConfiguration?.microsoftClientId?.trim() ?? "";
   const [driveStatus, setDriveStatus] = useState("");
@@ -453,6 +651,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     ) {
       setItems([]);
       setEditingItem(null);
+      setHistoryItemId("");
+      setItemHistory([]);
       return;
     }
     let active = true;
@@ -468,6 +668,14 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       active = false;
     };
   }, [client, screenState.status, itemRecoveryStatus]);
+
+  useEffect(() => {
+    const logins = items.filter(
+      (item): item is Extract<VaultItemView, { type: "login" }> => item.type === "login",
+    );
+    const findings = analyzePasswordHealth(logins);
+    setHealthFindings(Object.fromEntries(findings.map((finding) => [finding.id, finding])));
+  }, [items]);
 
   async function createVault(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -636,6 +844,47 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     try {
       const nextState = await client.verifyRecoveryKit(recoveryKit);
       setScreenState(nextState);
+      if (nextState.status === "unlocked" && nextState.recovery.status === "verified") {
+        if (
+          setupDestination === "google" &&
+          client.syncGoogleDrive !== undefined &&
+          googleClientId !== ""
+        ) {
+          setDriveStatus("Connecting the new encrypted vault to Google Drive…");
+          try {
+            const result = await client.syncGoogleDrive({ clientId: googleClientId });
+            setDriveStatus(
+              `Cloud vault ready: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded.`,
+            );
+            setActiveView("settings");
+          } catch (cloudError) {
+            setDriveStatus(
+              cloudOperationError(
+                "Google Drive",
+                cloudError,
+                "The vault is safe locally, but its first cloud sync did not complete. Retry from Settings.",
+              ),
+            );
+          }
+        } else if (
+          setupDestination === "onedrive" &&
+          client.syncOneDrive !== undefined &&
+          microsoftClientId !== ""
+        ) {
+          setOneDriveStatus("Connecting the new encrypted vault to OneDrive…");
+          try {
+            const result = await client.syncOneDrive({ clientId: microsoftClientId });
+            setOneDriveStatus(
+              `Cloud vault ready: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded.`,
+            );
+            setActiveView("settings");
+          } catch {
+            setOneDriveStatus(
+              "The vault is safe locally, but its first OneDrive sync did not complete. Retry from Settings.",
+            );
+          }
+        }
+      }
     } catch (error) {
       setError(
         operationError(
@@ -772,9 +1021,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setScreenState(await client.enrollDevice(password));
     } catch (error) {
       setError(
-        operationError(
+        deviceEnrollmentError(
           error,
-          "Device enrollment failed. Password and Recovery Kit fallback remain available.",
+          "Touch ID is unavailable on this device. You can still use your master password or Recovery Kit.",
         ),
       );
     } finally {
@@ -832,8 +1081,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setScreenState(client.lock());
   }
 
-  function clearItemForm() {
+  function clearItemForm(options: { readonly keepOpen?: boolean } = {}) {
     setEditingItem(null);
+    setItemEditorOpen(options.keepOpen === true);
     setItemTitle("");
     setItemUsername("");
     setItemPassword("");
@@ -843,11 +1093,14 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setItemFolder("");
     setItemTags("");
     setItemFavorite(false);
+    setProfileFields(EMPTY_PROFILE);
+    setPaymentCard(EMPTY_PAYMENT_CARD);
     setTotpImportStatus("");
   }
 
   function editItem(item: VaultItemView) {
     setEditingItem(item);
+    setItemEditorOpen(true);
     setItemType(item.type);
     setItemTitle(item.title);
     setItemFolder(item.folder ?? "");
@@ -859,12 +1112,45 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setItemUris(item.uris.join("\n"));
       setItemBody(item.notes);
       setItemTotpUri(item.totpUri ?? "");
+      setProfileFields(EMPTY_PROFILE);
+      setPaymentCard(EMPTY_PAYMENT_CARD);
+    } else if (item.type === "identity-profile") {
+      setItemUsername("");
+      setItemPassword("");
+      setItemUris("");
+      setItemBody("");
+      setItemTotpUri("");
+      setProfileFields(
+        Object.fromEntries(
+          PROFILE_FIELDS.map(({ key }) => [key, item[key]]),
+        ) as unknown as Readonly<Record<ProfileField, string>>,
+      );
+      setPaymentCard(EMPTY_PAYMENT_CARD);
+    } else if (item.type === "payment-card") {
+      setItemUsername("");
+      setItemPassword("");
+      setItemUris("");
+      setItemBody("");
+      setItemTotpUri("");
+      setProfileFields(EMPTY_PROFILE);
+      setPaymentCard({
+        billingAddress: item.billingAddress,
+        cardNumber: item.cardNumber,
+        cardholderName: item.cardholderName,
+        expiryMonth: item.expiryMonth,
+        expiryYear: item.expiryYear,
+        notes: item.notes,
+        securityCode: item.securityCode,
+        title: item.title,
+      });
     } else {
       setItemUsername("");
       setItemPassword("");
       setItemUris("");
       setItemBody(item.note);
       setItemTotpUri("");
+      setProfileFields(EMPTY_PROFILE);
+      setPaymentCard(EMPTY_PAYMENT_CARD);
     }
   }
 
@@ -875,6 +1161,15 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     try {
       if (itemType === "login") {
         if (itemTotpUri !== "") parseOtpAuthUri(itemTotpUri);
+        const exposure =
+          itemPassword.length === 0
+            ? ({ reason: "network", status: "unavailable" } as const)
+            : await checkPwnedPassword(itemPassword);
+        setHealthStatus(
+          exposure.status === "unavailable"
+            ? "The encrypted login was saved, but automatic breach checking was unavailable."
+            : "Automatic breach check complete. Only a five-character hash prefix was sent.",
+        );
         const organization = {
           favorite: itemFavorite,
           folder: itemFolder.trim(),
@@ -889,6 +1184,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
         };
         const input = {
           ...organization,
+          breachCheck: persistedBreachCheck(exposure),
           notes: itemBody,
           password: itemPassword,
           title: itemTitle,
@@ -899,12 +1195,60 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
             .filter(Boolean),
           username: itemUsername,
         };
+        let saved: VaultItemView;
         if (editingItem?.type === "login") {
           if (client.updateLogin === undefined) throw new Error();
-          await client.updateLogin(editingItem.id, editingItem.revisionId, input);
+          saved = await client.updateLogin(editingItem.id, editingItem.revisionId, input);
         } else {
           if (client.createLogin === undefined) throw new Error();
-          await client.createLogin(input);
+          saved = await client.createLogin(input);
+        }
+        if (saved.type === "login") {
+          setPwnedResults((current) => ({ ...current, [saved.id]: exposure }));
+        }
+      } else if (itemType === "identity-profile") {
+        const input: IdentityProfileInputView = {
+          ...profileFields,
+          favorite: itemFavorite,
+          folder: itemFolder.trim(),
+          tags: [
+            ...new Set(
+              itemTags
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+            ),
+          ],
+          title: itemTitle,
+        };
+        if (editingItem?.type === "identity-profile") {
+          if (client.updateIdentityProfile === undefined) throw new Error();
+          await client.updateIdentityProfile(editingItem.id, editingItem.revisionId, input);
+        } else {
+          if (client.createIdentityProfile === undefined) throw new Error();
+          await client.createIdentityProfile(input);
+        }
+      } else if (itemType === "payment-card") {
+        const input: PaymentCardInputView = {
+          ...paymentCard,
+          favorite: itemFavorite,
+          folder: itemFolder.trim(),
+          tags: [
+            ...new Set(
+              itemTags
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+            ),
+          ],
+          title: itemTitle,
+        };
+        if (editingItem?.type === "payment-card") {
+          if (client.updatePaymentCard === undefined) throw new Error();
+          await client.updatePaymentCard(editingItem.id, editingItem.revisionId, input);
+        } else {
+          if (client.createPaymentCard === undefined) throw new Error();
+          await client.createPaymentCard(input);
         }
       } else {
         const input = {
@@ -948,12 +1292,77 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     try {
       await client.deleteItem(item.id, item.revisionId);
       clearItemForm();
+      if (historyItemId === item.id) {
+        setHistoryItemId("");
+        setItemHistory([]);
+      }
       setItems((await client.listItems?.()) ?? []);
     } catch {
       setError("Unable to delete the item. It may have changed in another view.");
     } finally {
       setOperation(null);
     }
+  }
+
+  async function showItemHistory(item: VaultItemView) {
+    if (historyItemId === item.id) {
+      setHistoryItemId("");
+      setItemHistory([]);
+      return;
+    }
+    if (client.listItemHistory === undefined) return;
+    setError(null);
+    setOperation("item");
+    try {
+      setItemHistory(await client.listItemHistory(item.id));
+      setHistoryItemId(item.id);
+    } catch {
+      setError("Unable to open this item's encrypted revision history.");
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function restoreItemHistoryEntry(item: VaultItemView, entry: VaultItemHistoryEntryView) {
+    if (entry.item === null || client.restoreItemRevision === undefined) return;
+    setError(null);
+    setOperation("item");
+    try {
+      await client.restoreItemRevision(item.id, entry.revisionId, item.revisionId);
+      setItems((await client.listItems?.()) ?? []);
+      setItemHistory((await client.listItemHistory?.(item.id)) ?? []);
+    } catch {
+      setError("Unable to restore that version. Reload the item before resolving a newer change.");
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function createItemShare(item: VaultItemView) {
+    if (client.createItemShare === undefined) return;
+    setError(null);
+    setOperation("item");
+    try {
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString();
+      const value = await client.createItemShare(item.id, expiresAt);
+      setCreatedShare({ title: item.title, value });
+    } catch {
+      setError("Unable to create the encrypted share. The item remains private in your vault.");
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  function downloadItemShare() {
+    if (createdShare === null) return;
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(createdShare.value.bundle)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `veyrakey-share-${createdShare.value.bundle.shareId}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   const busy = operation !== null;
@@ -977,9 +1386,52 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
             item.title,
             item.folder ?? "",
             ...(item.tags ?? []),
-            item.type === "login" ? item.username : "",
+            item.type === "login"
+              ? item.username
+              : item.type === "identity-profile"
+                ? `${item.firstName} ${item.lastName} ${item.email} ${item.city} ${item.country}`
+                : "",
           ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch)),
         );
+  const loginItems = items.filter(
+    (item): item is Extract<VaultItemView, { type: "login" }> => item.type === "login",
+  );
+  const securityRecommendations = loginItems.flatMap((item) => {
+    const finding = healthFindings[item.id];
+    const breach =
+      pwnedResults[item.id] ??
+      (item.breachCheck?.status === "found"
+        ? ({ count: item.breachCheck.count, status: "found" } as const)
+        : item.breachCheck?.status === "not-found"
+          ? ({ status: "not-found" } as const)
+          : item.breachCheck?.status === "unavailable"
+            ? ({ reason: "network", status: "unavailable" } as const)
+            : undefined);
+    const issue =
+      breach?.status === "found"
+        ? {
+            detail: `Appeared ${breach.count.toLocaleString()} ${breach.count === 1 ? "time" : "times"} in known breach data`,
+            kind: "compromised" as const,
+            label: "Compromised password",
+          }
+        : finding?.reused
+          ? {
+              detail: "This password is also used by another saved login",
+              kind: "reused" as const,
+              label: "Reused password",
+            }
+          : finding?.weak
+            ? {
+                detail: "This password does not meet the local strength policy",
+                kind: "weak" as const,
+                label: "Weak password",
+              }
+            : null;
+    return issue === null ? [] : [{ breach, finding, issue, item }];
+  });
+  const selectedSecurityRecommendation =
+    securityRecommendations.find(({ item }) => item.id === selectedHealthItemId) ??
+    securityRecommendations[0];
 
   async function revealTotp(item: Extract<VaultItemView, { type: "login" }>) {
     if (item.totpUri === undefined || item.totpUri === "") return;
@@ -1040,8 +1492,23 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setOperation("item");
     setError(null);
     try {
-      const requests = selectedImportRequests(importPreview, [...selectedImportRows]);
-      if (requests.length === 0) throw new Error();
+      const selected = selectedImportRequests(importPreview, [...selectedImportRows]);
+      if (selected.length === 0) throw new Error();
+      const requests = await Promise.all(
+        selected.map(async (request) =>
+          request.type === "login"
+            ? {
+                ...request,
+                input: {
+                  ...request.input,
+                  breachCheck: persistedBreachCheck(
+                    await checkPwnedPassword(request.input.password),
+                  ),
+                },
+              }
+            : request,
+        ),
+      );
       await client.importItems(requests);
       setItems((await client.listItems?.()) ?? []);
       setImportText("");
@@ -1066,7 +1533,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download = "zk-wallet-encrypted-backup.json";
+      link.download = "veyrakey-encrypted-backup.json";
       link.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -1080,15 +1547,30 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     );
     const findings = analyzePasswordHealth(logins);
     setHealthFindings(Object.fromEntries(findings.map((finding) => [finding.id, finding])));
-    setHealthStatus(
-      `Analyzed ${findings.length} login(s) locally. “Old” uses the last item update as the password-age estimate.`,
-    );
+    setHealthStatus("Security recommendations updated on this device.");
   }
 
   async function checkPasswordExposure(item: Extract<VaultItemView, { type: "login" }>) {
     setHealthStatus("Checking a five-character hash prefix with padded responses…");
     const result = await checkPwnedPassword(item.password);
     setPwnedResults((current) => ({ ...current, [item.id]: result }));
+    if (client.updateLogin !== undefined) {
+      const updated = await client.updateLogin(item.id, item.revisionId, {
+        ...(item.favorite === undefined ? {} : { favorite: item.favorite }),
+        ...(item.folder === undefined ? {} : { folder: item.folder }),
+        ...(item.tags === undefined ? {} : { tags: item.tags }),
+        breachCheck: persistedBreachCheck(result),
+        notes: item.notes,
+        password: item.password,
+        title: item.title,
+        ...(item.totpUri === undefined ? {} : { totpUri: item.totpUri }),
+        uris: item.uris,
+        username: item.username,
+      });
+      setItems((current) =>
+        current.map((candidate) => (candidate.id === updated.id ? updated : candidate)),
+      );
+    }
     setHealthStatus(
       result.status === "unavailable"
         ? "Breach checking is unavailable or the response was invalid. Local analysis still works offline."
@@ -1177,18 +1659,15 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       onKeyDown={() => client.recordActivity()}
       onPointerDown={() => client.recordActivity()}
     >
-      <section className="vault-card" aria-labelledby="vault-status-title">
-        <Header state={screenState} surface={surface} />
-
-        <div
-          className={`lock-illustration${screenState.status === "unlocked" ? " is-unlocked" : ""}`}
-          aria-hidden="true"
-        >
-          <span className="lock-shackle" />
-          <span className="lock-body">
-            <span className="lock-keyhole" />
-          </span>
-        </div>
+      <section
+        className={
+          screenState.status === "unlocked" && screenState.recovery.status === "verified"
+            ? "vault-card vault-card-unlocked"
+            : "vault-card"
+        }
+        aria-labelledby="vault-status-title"
+      >
+        <Header surface={surface} />
 
         {screenState.status === "preparing" ? (
           <div className="vault-copy" role="status" aria-live="polite">
@@ -1224,15 +1703,68 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
         {screenState.status === "needs-setup" && !showRestore ? (
           <>
             <div className="vault-copy">
-              <p className="eyebrow">Create locally</p>
+              <p className="eyebrow">Choose where your encrypted vault lives</p>
               <h1 id="vault-status-title">Create your local vault</h1>
               <p className="vault-description">
-                Independent random root, document, and credential keys are wrapped locally. Creation
-                finishes only after your Recovery Kit drill.
+                Your keys are always created on this device. By default, only encrypted vault data
+                is copied to your personal cloud so the same vault can be restored on another
+                device.
               </p>
             </div>
             <PrivacyNote state={screenState} />
             <form className="vault-form" onSubmit={createVault}>
+              <fieldset className="setup-options">
+                <legend>Vault storage</legend>
+                {client.syncGoogleDrive === undefined ? null : (
+                  <label
+                    className={`setup-option${setupDestination === "google" ? " setup-option-active" : ""}`}
+                  >
+                    <input
+                      checked={setupDestination === "google"}
+                      disabled={busy || googleClientId === ""}
+                      name="setup-destination"
+                      onChange={() => setSetupDestination("google")}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>Google Drive</strong>
+                      <small>Recommended · private app-data storage · multi-device restore</small>
+                    </span>
+                  </label>
+                )}
+                {client.syncOneDrive === undefined ? null : (
+                  <label
+                    className={`setup-option${setupDestination === "onedrive" ? " setup-option-active" : ""}`}
+                  >
+                    <input
+                      checked={setupDestination === "onedrive"}
+                      disabled={busy || microsoftClientId === ""}
+                      name="setup-destination"
+                      onChange={() => setSetupDestination("onedrive")}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>Microsoft OneDrive</strong>
+                      <small>Encrypted application folder · multi-device restore</small>
+                    </span>
+                  </label>
+                )}
+                <label
+                  className={`setup-option${setupDestination === "local" ? " setup-option-active" : ""}`}
+                >
+                  <input
+                    checked={setupDestination === "local"}
+                    disabled={busy}
+                    name="setup-destination"
+                    onChange={() => setSetupDestination("local")}
+                    type="radio"
+                  />
+                  <span>
+                    <strong>This device only</strong>
+                    <small>Optional local-only mode · connect or migrate to cloud later</small>
+                  </span>
+                </label>
+              </fieldset>
               <label className="vault-field">
                 <span>Master password</span>
                 <input
@@ -1258,7 +1790,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 />
               </label>
               <p className="form-guidance">
-                Losing every unlock method is intentionally unrecoverable. No server reset exists.
+                {setupDestination === "local"
+                  ? "Local-only mode is selected. You can add or migrate to a cloud provider later."
+                  : "Cloud connection starts after the Recovery Kit check. Your password and keys never leave this device."}
               </p>
               <ErrorMessage error={error} />
               {operation === "create" ? (
@@ -1266,8 +1800,17 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   Creating independent encrypted key slots locally…
                 </p>
               ) : null}
-              <button className="action-button" disabled={busy} type="submit">
-                {operation === "create" ? "Creating encrypted vault…" : "Create encrypted vault"}
+              <button
+                aria-label="Create encrypted vault"
+                className="action-button"
+                disabled={busy}
+                type="submit"
+              >
+                {operation === "create"
+                  ? "Creating encrypted vault…"
+                  : setupDestination === "local"
+                    ? "Create local-only vault"
+                    : "Create and connect encrypted vault"}
               </button>
               <button
                 className="secondary-button"
@@ -1291,8 +1834,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
               <p className="eyebrow">Clean-profile recovery</p>
               <h1 id="vault-status-title">Restore encrypted vault</h1>
               <p className="vault-description">
-                Paste the strict encrypted bootstrap supplied by BYOS and use the Recovery Kit to
-                authenticate every compartment before setting a new password.
+                Restore the same user vault on this device from Google Drive, OneDrive, or an
+                encrypted backup. Cloud authorization locates ciphertext; your Recovery Kit
+                authenticates and unwraps it locally.
               </p>
             </div>
             <form className="vault-form" onSubmit={restoreVault}>
@@ -1378,14 +1922,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
         {screenState.status === "locked" ? (
           <>
             <div className="vault-copy">
-              <p className="eyebrow">Protected by design</p>
-              <h1 id="vault-status-title">Vault locked</h1>
-              <p className="vault-description">
-                Ordinary unlock opens only the root session. Document and credential keys remain
-                sealed.
-              </p>
+              <p className="eyebrow">Passwords</p>
+              <h1 id="vault-status-title">Unlock</h1>
+              <p className="vault-description">Use biometrics or your master password.</p>
             </div>
-            <PrivacyNote state={screenState} />
             {screenState.deviceUnlock.available && selectedDeviceSlotId !== "" ? (
               <div className="vault-actions">
                 {screenState.deviceUnlock.slots.length > 1 ? (
@@ -1411,7 +1951,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   onClick={() => void unlockDevice(selectedDeviceSlotId)}
                   type="button"
                 >
-                  Unlock with Touch ID or biometrics
+                  Use biometrics
                 </button>
               </div>
             ) : screenState.deviceUnlock.slots.length > 0 ? (
@@ -1436,7 +1976,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 </label>
                 <ErrorMessage error={error} />
                 <button className="action-button" disabled={busy} type="submit">
-                  {operation === "unlock" ? "Unlocking locally…" : "Unlock vault"}
+                  {operation === "unlock" ? "Unlocking…" : "Unlock"}
                 </button>
                 <button
                   className="secondary-button"
@@ -1447,7 +1987,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   }}
                   type="button"
                 >
-                  Use Recovery Kit instead
+                  Recovery Kit
                 </button>
               </form>
             ) : (
@@ -1556,27 +2096,63 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
         {screenState.status === "unlocked" && screenState.recovery.status === "verified" ? (
           <>
-            <div className="vault-copy">
-              <p className="eyebrow">Decrypted on this device</p>
-              <h1 id="vault-status-title">Vault unlocked</h1>
-              <p className="vault-description">
-                The empty root compartment is open. Login and secure-note records are encrypted
-                locally as immutable revisions with independent item keys.
-              </p>
+            <div className="vault-copy manager-titlebar">
+              <div>
+                <p className="eyebrow">Encrypted library</p>
+                <h1 id="vault-status-title">Passwords</h1>
+              </div>
+              <button
+                aria-label="Lock Passwords"
+                className="manager-lock-button"
+                onClick={lockVault}
+                type="button"
+              >
+                Lock
+              </button>
             </div>
-            <PrivacyNote state={screenState} />
             <nav aria-label="Vault sections" className="app-navigation">
-              {(["vault", "tools", "settings"] as const).map((view) => (
-                <button
-                  aria-current={activeView === view ? "page" : undefined}
-                  className={activeView === view ? "nav-button nav-button-active" : "nav-button"}
-                  key={view}
-                  onClick={() => setActiveView(view)}
-                  type="button"
-                >
-                  {view === "vault" ? "Vault" : view === "tools" ? "Tools" : "Settings"}
-                </button>
-              ))}
+              <p className="navigation-label">Library</p>
+              <button
+                aria-label="Passwords"
+                aria-current={activeView === "vault" ? "page" : undefined}
+                className={activeView === "vault" ? "nav-button nav-button-active" : "nav-button"}
+                onClick={() => setActiveView("vault")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  •••
+                </span>
+                <span>Passwords</span>
+                <strong>{items.length}</strong>
+              </button>
+              <button
+                aria-label="Security"
+                aria-current={activeView === "tools" ? "page" : undefined}
+                className={activeView === "tools" ? "nav-button nav-button-active" : "nav-button"}
+                onClick={() => setActiveView("tools")}
+                type="button"
+              >
+                <span className="nav-symbol nav-symbol-security" aria-hidden="true">
+                  !
+                </span>
+                <span>Security</span>
+                <strong>{securityRecommendations.length}</strong>
+              </button>
+              <p className="navigation-label">Storage</p>
+              <button
+                aria-label="Cloud & Data"
+                aria-current={activeView === "settings" ? "page" : undefined}
+                className={
+                  activeView === "settings" ? "nav-button nav-button-active" : "nav-button"
+                }
+                onClick={() => setActiveView("settings")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  ↕
+                </span>
+                <span>Cloud & Data</span>
+              </button>
             </nav>
 
             <div className="app-view" hidden={activeView !== "vault"}>
@@ -1598,12 +2174,38 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 </section>
               ) : null}
 
-              <section className="security-section" aria-labelledby="items-title">
-                <h2 id="items-title">Encrypted items ({items.length})</h2>
-                <label className="vault-field">
-                  <span>Search decrypted items on this device</span>
+              <section className="security-section vault-library" aria-labelledby="items-title">
+                <header className="library-toolbar">
+                  <div>
+                    <p className="section-kicker">All items</p>
+                    <h2 id="items-title">
+                      {items.length === 0
+                        ? "No saved items"
+                        : `${items.length} ${items.length === 1 ? "item" : "items"}`}
+                    </h2>
+                  </div>
+                  <button
+                    className="action-button compact-button library-add-button"
+                    disabled={busy}
+                    onClick={() => {
+                      clearItemForm();
+                      setItemType("login");
+                      setItemEditorOpen(true);
+                    }}
+                    type="button"
+                  >
+                    <span aria-hidden="true">＋</span>
+                    Add item
+                  </button>
+                </header>
+                <label className="vault-field library-search">
+                  <span className="visually-hidden">Search decrypted items on this device</span>
+                  <span className="search-symbol" aria-hidden="true">
+                    ⌕
+                  </span>
                   <input
                     className="vault-input"
+                    placeholder="Search this device"
                     onChange={(event) => {
                       const query = event.target.value;
                       setItemSearch(query);
@@ -1619,7 +2221,15 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   />
                 </label>
                 {items.length === 0 ? (
-                  <p className="capability-note">No saved logins or secure notes yet.</p>
+                  <div className="library-empty">
+                    <span className="empty-symbol" aria-hidden="true">
+                      •••
+                    </span>
+                    <strong>No saved items yet</strong>
+                    <p>
+                      Add a login here, or let the extension offer to save one after you sign in.
+                    </p>
+                  </div>
                 ) : visibleItems.length === 0 ? (
                   <p className="capability-note">No encrypted items match this local search.</p>
                 ) : (
@@ -1628,7 +2238,21 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       <p>
                         <strong>{item.title}</strong>
                         <span>
-                          {item.type === "login" ? item.username || "Login" : "Secure note"}
+                          {item.type === "login"
+                            ? item.username || "Login"
+                            : item.type === "identity-profile"
+                              ? [item.firstName, item.lastName].filter(Boolean).join(" ") ||
+                                "Identity profile"
+                              : item.type === "payment-card"
+                                ? [
+                                    item.cardholderName,
+                                    item.cardNumber.replace(/\D/gu, "").slice(-4)
+                                      ? `•••• ${item.cardNumber.replace(/\D/gu, "").slice(-4)}`
+                                      : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Payment card"
+                                : "Secure note"}
                         </span>
                         {item.folder ? <span>Folder: {item.folder}</span> : null}
                         {item.tags?.length ? <span>Tags: {item.tags.join(", ")}</span> : null}
@@ -1663,6 +2287,26 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                         >
                           Edit
                         </button>
+                        {client.listItemHistory !== undefined ? (
+                          <button
+                            aria-expanded={historyItemId === item.id}
+                            className="secondary-button compact-button"
+                            onClick={() => void showItemHistory(item)}
+                            type="button"
+                          >
+                            History
+                          </button>
+                        ) : null}
+                        {client.createItemShare !== undefined ? (
+                          <button
+                            className="secondary-button compact-button"
+                            disabled={busy}
+                            onClick={() => void createItemShare(item)}
+                            type="button"
+                          >
+                            Share
+                          </button>
+                        ) : null}
                         <button
                           className="danger-button compact-button"
                           onClick={() => void deleteItem(item)}
@@ -1671,229 +2315,516 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                           Delete
                         </button>
                       </div>
+                      {historyItemId === item.id ? (
+                        <section
+                          className="item-history"
+                          aria-label={`Version history for ${item.title}`}
+                        >
+                          <header>
+                            <strong>Version history</strong>
+                            <span>Restoring creates a new encrypted revision.</span>
+                          </header>
+                          <ol>
+                            {itemHistory.map((entry, index) => (
+                              <li key={entry.revisionId}>
+                                <span>
+                                  <strong>
+                                    {index === 0
+                                      ? "Current version"
+                                      : entry.operation === "delete"
+                                        ? "Deleted version"
+                                        : "Earlier version"}
+                                  </strong>
+                                  <small>
+                                    {entry.item === null
+                                      ? "Encrypted deletion marker"
+                                      : new Date(entry.item.updatedAt).toLocaleString()}
+                                  </small>
+                                </span>
+                                {index > 0 && entry.item !== null ? (
+                                  <button
+                                    className="secondary-button compact-button"
+                                    disabled={busy}
+                                    onClick={() => void restoreItemHistoryEntry(item, entry)}
+                                    type="button"
+                                  >
+                                    Restore
+                                  </button>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ol>
+                        </section>
+                      ) : null}
                     </div>
                   ))
                 )}
-                <form className="vault-form inset-form" onSubmit={saveItem}>
-                  <label className="vault-field">
-                    <span>Item type</span>
-                    <select
-                      className="vault-input"
-                      disabled={editingItem !== null || busy}
-                      onChange={(event) => {
-                        clearItemForm();
-                        setItemType(event.target.value as "login" | "secure-note");
-                      }}
-                      value={itemType}
-                    >
-                      <option value="login">Login</option>
-                      <option value="secure-note">Secure note</option>
-                    </select>
-                  </label>
-                  <label className="vault-field">
-                    <span>Title</span>
-                    <input
-                      className="vault-input"
-                      disabled={busy}
-                      onChange={(event) => setItemTitle(event.target.value)}
-                      value={itemTitle}
-                    />
-                  </label>
-                  {itemType === "login" ? (
-                    <>
-                      <label className="vault-field">
-                        <span>Username</span>
-                        <input
-                          autoComplete="off"
-                          className="vault-input"
-                          disabled={busy}
-                          onChange={(event) => setItemUsername(event.target.value)}
-                          value={itemUsername}
-                        />
-                      </label>
-                      <label className="vault-field">
-                        <span>Password</span>
-                        <input
-                          autoComplete="new-password"
-                          className="vault-input"
-                          disabled={busy}
-                          onChange={(event) => setItemPassword(event.target.value)}
-                          type="password"
-                          value={itemPassword}
-                        />
-                      </label>
+                {createdShare !== null ? (
+                  <section
+                    aria-labelledby="item-share-title"
+                    aria-modal="true"
+                    className="item-share-sheet"
+                    role="dialog"
+                  >
+                    <header className="item-editor-header">
+                      <div>
+                        <p className="section-kicker">Encrypted item share</p>
+                        <h3 id="item-share-title">Share {createdShare.title}</h3>
+                      </div>
                       <button
-                        className="secondary-button"
-                        disabled={busy}
-                        onClick={() =>
-                          setItemPassword(
-                            generatePassword({
-                              alphabet:
-                                "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*",
-                              length: 24,
-                              random: {
-                                randomBytes(length) {
-                                  const output = new Uint8Array(length);
-                                  crypto.getRandomValues(output);
-                                  return output;
-                                },
-                              },
-                            }),
-                          )
-                        }
+                        aria-label="Close encrypted share"
+                        className="icon-button"
+                        onClick={() => setCreatedShare(null)}
                         type="button"
                       >
-                        Generate strong password
+                        ×
+                      </button>
+                    </header>
+                    <p className="capability-note">
+                      Send the encrypted file and its secret through separate channels. This share
+                      expires {new Date(createdShare.value.bundle.expiresAt).toLocaleString()}.
+                    </p>
+                    <label className="vault-field">
+                      <span>Share secret</span>
+                      <input
+                        className="vault-input share-secret"
+                        readOnly
+                        spellCheck={false}
+                        value={createdShare.value.secret}
+                      />
+                    </label>
+                    <div className="share-actions">
+                      <button className="action-button" onClick={downloadItemShare} type="button">
+                        Download encrypted file
                       </button>
                       <button
                         className="secondary-button"
-                        disabled={busy}
-                        onClick={() =>
-                          setItemPassword(
-                            generatePassphrase({
-                              random: {
-                                randomBytes(length) {
-                                  const output = new Uint8Array(length);
-                                  crypto.getRandomValues(output);
-                                  return output;
-                                },
-                              },
-                              wordCount: 6,
-                              words: BUILT_IN_PASSPHRASE_WORDS,
-                            }),
-                          )
-                        }
+                        onClick={() => void copySecret(createdShare.value.secret)}
                         type="button"
                       >
-                        Generate passphrase
+                        Copy secret
                       </button>
-                      <label className="vault-field">
-                        <span>Website addresses, one per line</span>
-                        <textarea
-                          className="vault-input vault-textarea"
-                          disabled={busy}
-                          onChange={(event) => setItemUris(event.target.value)}
-                          value={itemUris}
-                        />
-                      </label>
-                      <label className="vault-field">
-                        <span>Authenticator otpauth URI (optional)</span>
-                        <input
-                          className="vault-input"
-                          disabled={busy}
-                          onChange={(event) => setItemTotpUri(event.target.value)}
-                          spellCheck={false}
-                          value={itemTotpUri}
-                        />
-                      </label>
-                      <label className="vault-field">
-                        <span>Import authenticator QR image (optional)</span>
-                        <input
-                          accept="image/png,image/jpeg,image/webp"
-                          disabled={busy}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (file === undefined) return;
-                            const Detector = (
-                              globalThis as unknown as {
-                                BarcodeDetector?: new (options: {
-                                  formats: string[];
-                                }) => {
-                                  detect(
-                                    source: unknown,
-                                  ): Promise<readonly { readonly rawValue?: string }[]>;
-                                };
-                              }
-                            ).BarcodeDetector;
-                            if (
-                              Detector === undefined ||
-                              globalThis.createImageBitmap === undefined
-                            ) {
-                              setTotpImportStatus(
-                                "QR scanning is unavailable here; paste the otpauth URI instead.",
-                              );
-                              return;
-                            }
-                            setTotpImportStatus("Reading QR image locally…");
-                            void createImageBitmap(file)
-                              .then(async (bitmap) => {
-                                try {
-                                  const parsed = await parseOtpAuthQr(
-                                    bitmap,
-                                    new Detector({ formats: ["qr_code"] }),
-                                  );
-                                  setItemTotpUri(parsed.uri);
-                                  setTotpImportStatus("Authenticator QR imported locally.");
-                                } finally {
-                                  bitmap.close();
-                                }
-                              })
-                              .catch(() =>
-                                setTotpImportStatus(
-                                  "No valid authenticator QR was found; no data was saved.",
-                                ),
-                              );
-                          }}
-                          type="file"
-                        />
-                      </label>
-                      {totpImportStatus ? (
-                        <p aria-live="polite" className="form-guidance">
-                          {totpImportStatus}
+                    </div>
+                    <p className="share-warning">
+                      Anyone with both parts can open this one item until expiry. The vault master
+                      password and other vault items are never included.
+                    </p>
+                  </section>
+                ) : null}
+                {itemEditorOpen ? (
+                  <section className="item-editor" aria-labelledby="item-editor-title">
+                    <header className="item-editor-header">
+                      <div>
+                        <p className="section-kicker">
+                          {editingItem === null ? "New encrypted item" : "Encrypted revision"}
                         </p>
+                        <h3 id="item-editor-title">
+                          {editingItem === null ? "Add to your vault" : `Edit ${editingItem.title}`}
+                        </h3>
+                      </div>
+                      <button
+                        aria-label="Close item editor"
+                        className="icon-button"
+                        disabled={busy}
+                        onClick={() => clearItemForm()}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </header>
+                    <form className="vault-form inset-form item-editor-form" onSubmit={saveItem}>
+                      <label className="vault-field">
+                        <span>Item type</span>
+                        <select
+                          className="vault-input"
+                          disabled={editingItem !== null || busy}
+                          onChange={(event) => {
+                            clearItemForm({ keepOpen: true });
+                            setItemType(
+                              event.target.value as
+                                | "identity-profile"
+                                | "login"
+                                | "payment-card"
+                                | "secure-note",
+                            );
+                          }}
+                          value={itemType}
+                        >
+                          <option value="login">Login</option>
+                          <option value="identity-profile">Identity profile</option>
+                          <option value="payment-card">Payment card</option>
+                          <option value="secure-note">Secure note</option>
+                        </select>
+                      </label>
+                      <label className="vault-field">
+                        <span>Title</span>
+                        <input
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setItemTitle(event.target.value)}
+                          value={itemTitle}
+                        />
+                      </label>
+                      {itemType === "login" ? (
+                        <>
+                          <label className="vault-field">
+                            <span>Username</span>
+                            <input
+                              autoComplete="off"
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setItemUsername(event.target.value)}
+                              value={itemUsername}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <span>Password</span>
+                            <input
+                              autoComplete="new-password"
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setItemPassword(event.target.value)}
+                              type="password"
+                              value={itemPassword}
+                            />
+                          </label>
+                          <button
+                            className="secondary-button"
+                            disabled={busy}
+                            onClick={() =>
+                              setItemPassword(
+                                generateReadableStrongPassword({
+                                  randomBytes(length) {
+                                    const output = new Uint8Array(length);
+                                    crypto.getRandomValues(output);
+                                    return output;
+                                  },
+                                }),
+                              )
+                            }
+                            type="button"
+                          >
+                            Generate readable password
+                          </button>
+                          <button
+                            className="secondary-button"
+                            disabled={busy}
+                            onClick={() =>
+                              setItemPassword(
+                                generatePassphrase({
+                                  random: {
+                                    randomBytes(length) {
+                                      const output = new Uint8Array(length);
+                                      crypto.getRandomValues(output);
+                                      return output;
+                                    },
+                                  },
+                                  wordCount: 6,
+                                  words: BUILT_IN_PASSPHRASE_WORDS,
+                                }),
+                              )
+                            }
+                            type="button"
+                          >
+                            Generate passphrase
+                          </button>
+                          <label className="vault-field">
+                            <span>Website addresses, one per line</span>
+                            <textarea
+                              className="vault-input vault-textarea"
+                              disabled={busy}
+                              onChange={(event) => setItemUris(event.target.value)}
+                              value={itemUris}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <span>Authenticator otpauth URI (optional)</span>
+                            <input
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setItemTotpUri(event.target.value)}
+                              spellCheck={false}
+                              value={itemTotpUri}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <span>Import authenticator QR image (optional)</span>
+                            <input
+                              accept="image/png,image/jpeg,image/webp"
+                              disabled={busy}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file === undefined) return;
+                                const Detector = (
+                                  globalThis as unknown as {
+                                    BarcodeDetector?: new (options: {
+                                      formats: string[];
+                                    }) => {
+                                      detect(
+                                        source: unknown,
+                                      ): Promise<readonly { readonly rawValue?: string }[]>;
+                                    };
+                                  }
+                                ).BarcodeDetector;
+                                if (
+                                  Detector === undefined ||
+                                  globalThis.createImageBitmap === undefined
+                                ) {
+                                  setTotpImportStatus(
+                                    "QR scanning is unavailable here; paste the otpauth URI instead.",
+                                  );
+                                  return;
+                                }
+                                setTotpImportStatus("Reading QR image locally…");
+                                void createImageBitmap(file)
+                                  .then(async (bitmap) => {
+                                    try {
+                                      const parsed = await parseOtpAuthQr(
+                                        bitmap,
+                                        new Detector({ formats: ["qr_code"] }),
+                                      );
+                                      setItemTotpUri(parsed.uri);
+                                      setTotpImportStatus("Authenticator QR imported locally.");
+                                    } finally {
+                                      bitmap.close();
+                                    }
+                                  })
+                                  .catch(() =>
+                                    setTotpImportStatus(
+                                      "No valid authenticator QR was found; no data was saved.",
+                                    ),
+                                  );
+                              }}
+                              type="file"
+                            />
+                          </label>
+                          {totpImportStatus ? (
+                            <p aria-live="polite" className="form-guidance">
+                              {totpImportStatus}
+                            </p>
+                          ) : null}
+                        </>
+                      ) : itemType === "identity-profile" ? (
+                        <>
+                          <div className="profile-fields">
+                            {PROFILE_FIELDS.filter((field) =>
+                              PRIMARY_PROFILE_FIELD_KEYS.has(field.key),
+                            ).map((field) => (
+                              <label className="vault-field" key={field.key}>
+                                <span>{field.label}</span>
+                                <input
+                                  autoComplete={field.autocomplete}
+                                  className="vault-input"
+                                  disabled={busy}
+                                  onChange={(event) =>
+                                    setProfileFields((current) => ({
+                                      ...current,
+                                      [field.key]: event.target.value,
+                                    }))
+                                  }
+                                  type={field.type ?? "text"}
+                                  value={profileFields[field.key]}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                          <details className="item-disclosure">
+                            <summary>More personal details</summary>
+                            <div className="profile-fields">
+                              {PROFILE_FIELDS.filter(
+                                (field) => !PRIMARY_PROFILE_FIELD_KEYS.has(field.key),
+                              ).map((field) => (
+                                <label className="vault-field" key={field.key}>
+                                  <span>{field.label}</span>
+                                  <input
+                                    autoComplete={field.autocomplete}
+                                    className="vault-input"
+                                    disabled={busy}
+                                    onChange={(event) =>
+                                      setProfileFields((current) => ({
+                                        ...current,
+                                        [field.key]: event.target.value,
+                                      }))
+                                    }
+                                    type={field.type ?? "text"}
+                                    value={profileFields[field.key]}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </details>
+                        </>
+                      ) : itemType === "payment-card" ? (
+                        <>
+                          <label className="vault-field">
+                            <span>Name on card</span>
+                            <input
+                              autoComplete="cc-name"
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) =>
+                                setPaymentCard((current) => ({
+                                  ...current,
+                                  cardholderName: event.target.value,
+                                }))
+                              }
+                              value={paymentCard.cardholderName}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <span>Card number</span>
+                            <input
+                              autoComplete="cc-number"
+                              className="vault-input"
+                              disabled={busy}
+                              inputMode="numeric"
+                              onChange={(event) =>
+                                setPaymentCard((current) => ({
+                                  ...current,
+                                  cardNumber: event.target.value,
+                                }))
+                              }
+                              spellCheck={false}
+                              value={paymentCard.cardNumber}
+                            />
+                          </label>
+                          <div className="profile-fields">
+                            <label className="vault-field">
+                              <span>Expiry month</span>
+                              <input
+                                autoComplete="cc-exp-month"
+                                className="vault-input"
+                                disabled={busy}
+                                inputMode="numeric"
+                                maxLength={2}
+                                onChange={(event) =>
+                                  setPaymentCard((current) => ({
+                                    ...current,
+                                    expiryMonth: event.target.value,
+                                  }))
+                                }
+                                placeholder="MM"
+                                value={paymentCard.expiryMonth}
+                              />
+                            </label>
+                            <label className="vault-field">
+                              <span>Expiry year</span>
+                              <input
+                                autoComplete="cc-exp-year"
+                                className="vault-input"
+                                disabled={busy}
+                                inputMode="numeric"
+                                maxLength={4}
+                                onChange={(event) =>
+                                  setPaymentCard((current) => ({
+                                    ...current,
+                                    expiryYear: event.target.value,
+                                  }))
+                                }
+                                placeholder="YYYY"
+                                value={paymentCard.expiryYear}
+                              />
+                            </label>
+                          </div>
+                          <p className="field-hint">
+                            Security codes are never stored. Enter the code directly on the merchant
+                            page when required.
+                          </p>
+                          <details className="item-disclosure">
+                            <summary>Billing details</summary>
+                            <div className="item-disclosure-fields">
+                              <label className="vault-field">
+                                <span>Billing address</span>
+                                <textarea
+                                  autoComplete="street-address"
+                                  className="vault-input vault-textarea"
+                                  disabled={busy}
+                                  onChange={(event) =>
+                                    setPaymentCard((current) => ({
+                                      ...current,
+                                      billingAddress: event.target.value,
+                                    }))
+                                  }
+                                  value={paymentCard.billingAddress}
+                                />
+                              </label>
+                              <label className="vault-field">
+                                <span>Notes</span>
+                                <textarea
+                                  className="vault-input vault-textarea"
+                                  disabled={busy}
+                                  onChange={(event) =>
+                                    setPaymentCard((current) => ({
+                                      ...current,
+                                      notes: event.target.value,
+                                    }))
+                                  }
+                                  value={paymentCard.notes}
+                                />
+                              </label>
+                            </div>
+                          </details>
+                        </>
                       ) : null}
-                    </>
-                  ) : null}
-                  <label className="vault-field">
-                    <span>Folder (optional)</span>
-                    <input
-                      className="vault-input"
-                      disabled={busy}
-                      onChange={(event) => setItemFolder(event.target.value)}
-                      value={itemFolder}
-                    />
-                  </label>
-                  <label className="vault-field">
-                    <span>Tags, comma separated</span>
-                    <input
-                      className="vault-input"
-                      disabled={busy}
-                      onChange={(event) => setItemTags(event.target.value)}
-                      value={itemTags}
-                    />
-                  </label>
-                  <label className="vault-field">
-                    <input
-                      checked={itemFavorite}
-                      disabled={busy}
-                      onChange={(event) => setItemFavorite(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Favorite</span>
-                  </label>
-                  <label className="vault-field">
-                    <span>{itemType === "login" ? "Notes" : "Secure note"}</span>
-                    <textarea
-                      className="vault-input vault-textarea"
-                      disabled={busy}
-                      onChange={(event) => setItemBody(event.target.value)}
-                      value={itemBody}
-                    />
-                  </label>
-                  <button className="action-button" disabled={busy} type="submit">
-                    {editingItem === null ? "Save encrypted item" : "Save encrypted revision"}
-                  </button>
-                  {editingItem !== null ? (
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={clearItemForm}
-                      type="button"
-                    >
-                      Cancel edit
-                    </button>
-                  ) : null}
-                </form>
+                      <details className="item-disclosure">
+                        <summary>Organization</summary>
+                        <div className="item-disclosure-fields">
+                          <label className="vault-field">
+                            <span>Folder</span>
+                            <input
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setItemFolder(event.target.value)}
+                              value={itemFolder}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <span>Tags</span>
+                            <input
+                              className="vault-input"
+                              disabled={busy}
+                              onChange={(event) => setItemTags(event.target.value)}
+                              value={itemTags}
+                            />
+                          </label>
+                          <label className="vault-field">
+                            <input
+                              checked={itemFavorite}
+                              disabled={busy}
+                              onChange={(event) => setItemFavorite(event.target.checked)}
+                              type="checkbox"
+                            />
+                            <span>Favorite</span>
+                          </label>
+                        </div>
+                      </details>
+                      {itemType === "identity-profile" || itemType === "payment-card" ? null : (
+                        <label className="vault-field">
+                          <span>{itemType === "login" ? "Notes" : "Secure note"}</span>
+                          <textarea
+                            className="vault-input vault-textarea"
+                            disabled={busy}
+                            onChange={(event) => setItemBody(event.target.value)}
+                            value={itemBody}
+                          />
+                        </label>
+                      )}
+                      <button className="action-button" disabled={busy} type="submit">
+                        {editingItem === null ? "Save encrypted item" : "Save encrypted revision"}
+                      </button>
+                      {editingItem !== null ? (
+                        <button
+                          className="secondary-button"
+                          disabled={busy}
+                          onClick={() => clearItemForm()}
+                          type="button"
+                        >
+                          Cancel edit
+                        </button>
+                      ) : null}
+                    </form>
+                  </section>
+                ) : null}
               </section>
             </div>
 
@@ -1910,7 +2841,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     </div>
                   </div>
                   <p className="form-guidance">
-                    Connect your Google account. Only encrypted vault data is uploaded.
+                    Sync, restore, or migrate this encrypted vault through your Google account. Only
+                    authenticated ciphertext is uploaded; this app never uploads plaintext keys.
                   </p>
                   <button
                     className="action-button"
@@ -1918,7 +2850,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     onClick={() => void syncGoogleDrive()}
                     type="button"
                   >
-                    Connect Google Drive
+                    Sync or migrate to Google Drive
                   </button>
                   {googleClientId === "" ? (
                     <p className="configuration-error" role="status">
@@ -1954,8 +2886,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     </div>
                   </div>
                   <p className="form-guidance">
-                    Connect your Microsoft account. Authorization uses PKCE and app-folder-only
-                    access.
+                    Sync, restore, or migrate this encrypted vault through your Microsoft account.
+                    Authorization uses PKCE and app-folder-only access.
                   </p>
                   <button
                     className="action-button"
@@ -1963,7 +2895,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     onClick={() => void syncOneDrive()}
                     type="button"
                   >
-                    Connect OneDrive
+                    Sync or migrate to OneDrive
                   </button>
                   {microsoftClientId === "" ? (
                     <p className="configuration-error" role="status">
@@ -1986,158 +2918,219 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   ) : null}
                 </section>
               )}
-            </div>
 
-            <div className="app-view" hidden={activeView !== "tools"}>
-              <section className="security-section" aria-labelledby="health-title">
-                <h2 id="health-title">Password health</h2>
-                <p className="form-guidance">
-                  Weakness, reuse, and age are calculated only in this unlocked client. Breach
-                  checks are optional and send one SHA-1 hash prefix—not the password—to Pwned
-                  Passwords.
-                </p>
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={analyzeLocalPasswords}
-                  type="button"
-                >
-                  Analyze passwords locally
-                </button>
-                {items
-                  .filter(
-                    (item): item is Extract<VaultItemView, { type: "login" }> =>
-                      item.type === "login",
-                  )
-                  .map((item) => {
-                    const finding = healthFindings[item.id];
-                    const pwned = pwnedResults[item.id];
-                    return (
-                      <div className="security-row" key={`health-${item.id}`}>
-                        <p>
-                          <strong>{item.title}</strong>
-                          <span>
-                            {finding === undefined
-                              ? "Not analyzed"
-                              : [
-                                  finding.weak ? "weak" : "strength checks passed",
-                                  finding.reused ? "reused" : "not reused",
-                                  finding.ageDays === null
-                                    ? "age unknown"
-                                    : `${finding.ageDays} days since item update`,
-                                ].join(" · ")}
-                            {pwned?.status === "found"
-                              ? ` · found ${pwned.count} time(s) in the breach corpus`
-                              : pwned?.status === "not-found"
-                                ? " · not found in the breach corpus"
-                                : pwned?.status === "unavailable"
-                                  ? " · breach check unavailable"
-                                  : ""}
-                          </span>
-                        </p>
-                        <button
-                          className="secondary-button compact-button"
-                          disabled={busy}
-                          onClick={() => void checkPasswordExposure(item)}
-                          type="button"
-                        >
-                          Check breach corpus
-                        </button>
-                      </div>
-                    );
-                  })}
-                {healthStatus ? (
-                  <p aria-live="polite" className="form-guidance" role="status">
-                    {healthStatus}
-                  </p>
-                ) : null}
-              </section>
-
-              <section className="security-section" aria-labelledby="transfer-title">
-                <h2 id="transfer-title">Import and encrypted backup</h2>
-                <label className="vault-field">
-                  <span>Import format</span>
-                  <select
-                    className="vault-input"
-                    disabled={busy}
-                    onChange={(event) => {
-                      setImportSource(event.target.value as "bitwarden" | "csv");
-                      setImportPreview(null);
-                    }}
-                    value={importSource}
-                  >
-                    <option value="csv">Generic CSV</option>
-                    <option value="bitwarden">Bitwarden JSON</option>
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span>Import file contents</span>
-                  <textarea
-                    className="vault-input vault-textarea"
-                    disabled={busy}
-                    onChange={(event) => {
-                      setImportText(event.target.value);
-                      setImportPreview(null);
-                    }}
-                    value={importText}
-                  />
-                </label>
-                <button
-                  className="secondary-button"
-                  disabled={busy || importText.length === 0}
-                  onClick={previewImport}
-                  type="button"
-                >
-                  Preview import
-                </button>
-                {importPreview === null ? null : (
-                  <section aria-label="Import preview">
-                    <p>
-                      {importPreview.validCount} valid row(s). Duplicate warnings are unchecked by
-                      default.
-                    </p>
-                    {importPreview.rows.map((row) => (
-                      <label className="vault-field" key={row.index}>
-                        <input
-                          checked={selectedImportRows.has(row.index)}
-                          disabled={row.status !== "valid" || busy}
-                          onChange={(event) => {
-                            setSelectedImportRows((current) => {
-                              const next = new Set(current);
-                              if (event.target.checked) next.add(row.index);
-                              else next.delete(row.index);
-                              return next;
-                            });
-                          }}
-                          type="checkbox"
-                        />
-                        <span>
-                          {row.sourceLabel}: {row.status}
-                          {row.warnings.length ? ` — ${row.warnings.join(", ")}` : ""}
-                        </span>
-                      </label>
-                    ))}
+              <section className="cloud-card transfer-card" aria-labelledby="transfer-title">
+                <div className="cloud-card-heading">
+                  <span className="cloud-provider-mark transfer-mark" aria-hidden="true">
+                    ↕
+                  </span>
+                  <div>
+                    <h2 id="transfer-title">Import & Backup</h2>
+                    <p>Move data without exposing plaintext to a server</p>
+                  </div>
+                </div>
+                <details className="transfer-disclosure">
+                  <summary>Import passwords</summary>
+                  <div className="transfer-fields">
+                    <label className="vault-field">
+                      <span>Format</span>
+                      <select
+                        className="vault-input"
+                        disabled={busy}
+                        onChange={(event) => {
+                          setImportSource(event.target.value as "bitwarden" | "csv");
+                          setImportPreview(null);
+                        }}
+                        value={importSource}
+                      >
+                        <option value="csv">Generic CSV</option>
+                        <option value="bitwarden">Bitwarden JSON</option>
+                      </select>
+                    </label>
+                    <label className="vault-field">
+                      <span>File contents</span>
+                      <textarea
+                        className="vault-input vault-textarea"
+                        disabled={busy}
+                        onChange={(event) => {
+                          setImportText(event.target.value);
+                          setImportPreview(null);
+                        }}
+                        value={importText}
+                      />
+                    </label>
                     <button
-                      className="action-button"
-                      disabled={busy || selectedImportRows.size === 0}
-                      onClick={() => void commitImport()}
+                      className="secondary-button compact-button"
+                      disabled={busy || importText.length === 0}
+                      onClick={previewImport}
                       type="button"
                     >
-                      Import selected rows atomically
+                      Preview
                     </button>
-                  </section>
-                )}
+                    {importPreview === null ? null : (
+                      <section aria-label="Import preview" className="import-preview">
+                        <p>{importPreview.validCount} valid row(s)</p>
+                        {importPreview.rows.map((row) => (
+                          <label className="import-row" key={row.index}>
+                            <input
+                              checked={selectedImportRows.has(row.index)}
+                              disabled={row.status !== "valid" || busy}
+                              onChange={(event) => {
+                                setSelectedImportRows((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked) next.add(row.index);
+                                  else next.delete(row.index);
+                                  return next;
+                                });
+                              }}
+                              type="checkbox"
+                            />
+                            <span>
+                              {row.sourceLabel}: {row.status}
+                              {row.warnings.length ? ` — ${row.warnings.join(", ")}` : ""}
+                            </span>
+                          </label>
+                        ))}
+                        <button
+                          className="action-button compact-button"
+                          disabled={busy || selectedImportRows.size === 0}
+                          onClick={() => void commitImport()}
+                          type="button"
+                        >
+                          Import selected
+                        </button>
+                      </section>
+                    )}
+                  </div>
+                </details>
                 <button
-                  className="secondary-button"
+                  className="secondary-button compact-button transfer-download"
                   disabled={busy}
                   onClick={() => void downloadEncryptedArchive()}
                   type="button"
                 >
                   Download encrypted backup
                 </button>
-                <p className="form-guidance">
-                  Backups contain only authenticated encrypted vault state. Restore them from the
-                  clean-profile recovery screen with the Recovery Kit.
+              </section>
+            </div>
+
+            <div className="app-view" hidden={activeView !== "tools"}>
+              <section className="security-recommendations" aria-labelledby="health-title">
+                <header className="security-heading">
+                  <div>
+                    <h2 id="health-title">Security</h2>
+                    <p>
+                      {securityRecommendations.length}{" "}
+                      {securityRecommendations.length === 1 ? "recommendation" : "recommendations"}
+                    </p>
+                  </div>
+                  <button
+                    aria-label="Refresh security recommendations"
+                    className="icon-button"
+                    disabled={busy}
+                    onClick={analyzeLocalPasswords}
+                    type="button"
+                  >
+                    ↻
+                  </button>
+                </header>
+
+                {securityRecommendations.length === 0 ? (
+                  <div className="security-empty">
+                    <span aria-hidden="true">✓</span>
+                    <strong>No security recommendations</strong>
+                    <p>Saved passwords pass the available local and breach checks.</p>
+                  </div>
+                ) : (
+                  <div className="security-browser">
+                    <div className="security-list">
+                      {securityRecommendations.map(({ issue, item }) => (
+                        <button
+                          aria-current={
+                            selectedSecurityRecommendation?.item.id === item.id ? "true" : undefined
+                          }
+                          className={
+                            selectedSecurityRecommendation?.item.id === item.id
+                              ? "security-list-row security-list-row-selected"
+                              : "security-list-row"
+                          }
+                          key={`health-${item.id}`}
+                          onClick={() => setSelectedHealthItemId(item.id)}
+                          type="button"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`security-issue-icon security-issue-${issue.kind}`}
+                          >
+                            !
+                          </span>
+                          <span className="security-list-copy">
+                            <strong>{item.title}</strong>
+                            <small>{issue.label}</small>
+                          </span>
+                          <span aria-hidden="true" className="row-chevron">
+                            ›
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {selectedSecurityRecommendation === undefined ? null : (
+                      <article className="security-detail">
+                        <span
+                          aria-hidden="true"
+                          className={`security-detail-icon security-issue-${selectedSecurityRecommendation.issue.kind}`}
+                        >
+                          !
+                        </span>
+                        <h3>{selectedSecurityRecommendation.issue.label}</h3>
+                        <p>{selectedSecurityRecommendation.issue.detail}.</p>
+                        <dl>
+                          <div>
+                            <dt>Account</dt>
+                            <dd>{selectedSecurityRecommendation.item.username || "No username"}</dd>
+                          </div>
+                          <div>
+                            <dt>Website</dt>
+                            <dd>
+                              {selectedSecurityRecommendation.item.uris[0] ?? "No website saved"}
+                            </dd>
+                          </div>
+                        </dl>
+                        <div className="security-detail-actions">
+                          <button
+                            className="secondary-button compact-button"
+                            disabled={busy}
+                            onClick={() =>
+                              void checkPasswordExposure(selectedSecurityRecommendation.item)
+                            }
+                            type="button"
+                          >
+                            Check again
+                          </button>
+                          <button
+                            className="action-button compact-button"
+                            onClick={() => {
+                              editItem(selectedSecurityRecommendation.item);
+                              setActiveView("vault");
+                            }}
+                            type="button"
+                          >
+                            Change password
+                          </button>
+                        </div>
+                      </article>
+                    )}
+                  </div>
+                )}
+
+                {healthStatus ? (
+                  <p aria-live="polite" className="security-status" role="status">
+                    {healthStatus}
+                  </p>
+                ) : null}
+                <p className="security-privacy-note">
+                  Breach checks use a five-character hash prefix; the password is never sent.
                 </p>
               </section>
             </div>
@@ -2281,7 +3274,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       />
                     </label>
                     <button className="secondary-button" disabled={busy} type="submit">
-                      Set up Touch ID or biometrics
+                      Set up Touch ID
                     </button>
                   </form>
                 ) : (
@@ -2352,19 +3345,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
             </div>
 
             <ErrorMessage error={error} />
-            <div className="vault-actions">
-              <button className="action-button" onClick={lockVault} type="button">
-                Lock vault
-              </button>
-            </div>
           </>
         ) : null}
-
-        <footer className="vault-footer">
-          <span>Personal cloud source of truth</span>
-          <span aria-hidden="true">•</span>
-          <span>Client-side encryption</span>
-        </footer>
       </section>
     </main>
   );

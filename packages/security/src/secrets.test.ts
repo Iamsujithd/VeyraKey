@@ -3,6 +3,7 @@ import {
   BUILT_IN_PASSPHRASE_WORDS,
   copyWithBestEffortClear,
   generatePassword,
+  generateReadableStrongPassword,
   generateTotp,
   parseOtpAuthQr,
   parseOtpAuthUri,
@@ -27,6 +28,20 @@ describe("secret generation", () => {
   it("ships a unique 2048-entry passphrase list", () => {
     expect(BUILT_IN_PASSPHRASE_WORDS).toHaveLength(2_048);
     expect(new Set(BUILT_IN_PASSPHRASE_WORDS).size).toBe(2_048);
+  });
+
+  it("generates readable three-group strong passwords", () => {
+    let next = 0;
+    const password = generateReadableStrongPassword({
+      randomBytes: (length) =>
+        Uint8Array.from({ length }, () => {
+          next = (next + 17) % 251;
+          return next;
+        }),
+    });
+    expect(password).toMatch(
+      /^(?=.{20}$)(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{6}-[A-Za-z0-9]{6}-[A-Za-z0-9]{6}$/u,
+    );
   });
 });
 

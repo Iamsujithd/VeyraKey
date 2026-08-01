@@ -307,6 +307,7 @@ export interface DevicePrfProvider {
   enroll(request: DevicePrfEnrollmentRequest): Promise<DevicePrfEnrollmentResult>;
   evaluate(request: DevicePrfEvaluationRequest): Promise<Uint8Array>;
   getCapability(): Promise<DevicePrfCapability>;
+  getScope?(): string | null;
 }
 
 export interface WebAuthnPrfPlatform {
@@ -321,13 +322,51 @@ export interface WebAuthnPrfProviderOptions {
   readonly platform?: WebAuthnPrfPlatform;
 }
 
+export type DevicePrfFailureReason =
+  | "canceled-or-timed-out"
+  | "credential-unavailable"
+  | "invalid-request"
+  | "origin-mismatch"
+  | "platform-error"
+  | "result-unavailable"
+  | "unsupported";
+
 export class DevicePrfError extends Error {
   readonly code = "PRF_OPERATION_FAILED" as const;
+  readonly reason: DevicePrfFailureReason;
 
-  constructor() {
-    super("Device unlock failed");
+  constructor(reason: DevicePrfFailureReason = "platform-error") {
+    super(
+      reason === "unsupported"
+        ? "Biometric unlock is not supported in this browser context"
+        : reason === "credential-unavailable" || reason === "origin-mismatch"
+          ? "This biometric enrollment is not available to this app"
+          : reason === "canceled-or-timed-out"
+            ? "Biometric verification was canceled or timed out"
+            : reason === "result-unavailable"
+              ? "The authenticator did not return the required encrypted key"
+              : "Device unlock failed",
+    );
     this.name = "DevicePrfError";
+    this.reason = reason;
   }
+}
+
+function devicePrfError(error: unknown): DevicePrfError {
+  if (error instanceof DevicePrfError) return error;
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError") {
+      return new DevicePrfError("canceled-or-timed-out");
+    }
+    if (error.name === "InvalidStateError" || error.name === "NotFoundError") {
+      return new DevicePrfError("credential-unavailable");
+    }
+    if (error.name === "SecurityError") return new DevicePrfError("origin-mismatch");
+    if (error.name === "DataError" || error.name === "TypeError") {
+      return new DevicePrfError("invalid-request");
+    }
+  }
+  return new DevicePrfError("platform-error");
 }
 
 type PrfExtensionResult = {
@@ -343,7 +382,7 @@ function defaultWebAuthnPrfPlatform(): WebAuthnPrfPlatform | null {
     | undefined;
   if (
     globalThis.navigator?.credentials === undefined ||
-    credentialConstructor?.getClientCapabilities === undefined ||
+    credentialConstructor === undefined ||
     globalThis.location === undefined
   ) {
     return null;
@@ -351,8 +390,12 @@ function defaultWebAuthnPrfPlatform(): WebAuthnPrfPlatform | null {
 
   return {
     credentials: globalThis.navigator.credentials,
-    getClientCapabilities: () =>
-      credentialConstructor.getClientCapabilities?.() ?? Promise.resolve({}),
+    ...(credentialConstructor.getClientCapabilities === undefined
+      ? {}
+      : {
+          getClientCapabilities: () =>
+            credentialConstructor.getClientCapabilities?.() ?? Promise.resolve({}),
+        }),
     hostname: globalThis.location.hostname,
     protocol: globalThis.location.protocol,
     randomBytes: (length) => platformCrypto().getRandomValues(new Uint8Array(length)),
@@ -367,6 +410,13 @@ function isEligibleWebOrigin(platform: WebAuthnPrfPlatform): boolean {
     (platform.protocol === "http:" &&
       (platform.hostname === "localhost" || platform.hostname === "127.0.0.1"))
   );
+}
+
+function webAuthnScope(platform: WebAuthnPrfPlatform | null): string | null {
+  if (platform === null || !isEligibleWebOrigin(platform) || platform.hostname === undefined) {
+    return null;
+  }
+  return `${platform.protocol}//${platform.hostname}`;
 }
 
 function assertPrfInput(input: Uint8Array): void {
@@ -408,13 +458,16 @@ export function createWebAuthnPrfProvider(
   const platform = options.platform ?? defaultWebAuthnPrfPlatform();
 
   async function getCapability(): Promise<DevicePrfCapability> {
-    if (
-      platform === null ||
-      !isEligibleWebOrigin(platform) ||
-      platform.getClientCapabilities === undefined
-    ) {
+    if (platform === null || !isEligibleWebOrigin(platform)) {
       return "unsupported";
     }
+    // Chromium's extension-origin capability reporting has not always matched
+    // the authenticator ceremony. On an extension page the ceremony itself is
+    // authoritative and still fails closed if PRF is not returned.
+    if (platform.protocol === "chrome-extension:" || platform.protocol === "moz-extension:") {
+      return "supported";
+    }
+    if (platform.getClientCapabilities === undefined) return "unsupported";
     try {
       const capabilities = await platform.getClientCapabilities();
       return capabilities["extension:prf"] === true ? "supported" : "unsupported";
@@ -425,8 +478,11 @@ export function createWebAuthnPrfProvider(
 
   async function evaluate(request: DevicePrfEvaluationRequest): Promise<Uint8Array> {
     try {
-      if (platform === null || (await getCapability()) !== "supported") {
-        throw new DevicePrfError();
+      // Client-capability reporting is advisory and has differed across Chromium
+      // versions and extension origins. The authenticated ceremony and its PRF
+      // result are authoritative; missing/invalid results still fail closed.
+      if (platform === null || !isEligibleWebOrigin(platform)) {
+        throw new DevicePrfError("unsupported");
       }
       assertPrfInput(request.prfInput);
       const credentialId = credentialIdBytes(request.credentialId);
@@ -449,18 +505,18 @@ export function createWebAuthnPrfProvider(
       } as unknown as CredentialRequestOptions;
       const assertion = await platform.credentials.get(options);
       const output = prfResult(assertion, false);
-      if (output === null) throw new DevicePrfError();
+      if (output === null) throw new DevicePrfError("result-unavailable");
       return output;
-    } catch {
-      throw new DevicePrfError();
+    } catch (error) {
+      throw devicePrfError(error);
     }
   }
 
   return {
     async enroll(request) {
       try {
-        if (platform === null || (await getCapability()) !== "supported") {
-          throw new DevicePrfError();
+        if (platform === null || !isEligibleWebOrigin(platform)) {
+          throw new DevicePrfError("unsupported");
         }
         assertPrfInput(request.prfInput);
         if (request.userId.length === 0 || request.userId.length > 64) {
@@ -481,7 +537,7 @@ export function createWebAuthnPrfProvider(
               { alg: -7, type: "public-key" },
               { alg: -257, type: "public-key" },
             ],
-            rp: { name: "Zero-Knowledge Wallet" },
+            rp: { name: "VeyraKey" },
             timeout: 120_000,
             user: {
               displayName: "Local vault",
@@ -502,16 +558,19 @@ export function createWebAuthnPrfProvider(
           | { readonly prf?: PrfExtensionResult }
           | undefined;
         if (rawId === undefined || extension?.prf?.enabled !== true) {
-          throw new DevicePrfError();
+          throw new DevicePrfError("result-unavailable");
         }
         const credentialId = bytesToBase64Url(new Uint8Array(rawId.slice(0)));
         const prfOutput = await evaluate({ credentialId, prfInput: request.prfInput });
         return { credentialId, prfOutput };
-      } catch {
-        throw new DevicePrfError();
+      } catch (error) {
+        throw devicePrfError(error);
       }
     },
     evaluate,
     getCapability,
+    getScope() {
+      return webAuthnScope(platform);
+    },
   };
 }

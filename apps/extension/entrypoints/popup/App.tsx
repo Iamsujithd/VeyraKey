@@ -1,4 +1,4 @@
-import { createCryptoProvider, createWebAuthnPrfProvider } from "@zk-wallet/crypto";
+import { createCryptoProvider } from "@zk-wallet/crypto";
 import {
   IndexedDbItemRevisionRepository,
   IndexedDbVaultHeaderRepository,
@@ -9,11 +9,12 @@ import {
   generateTotp,
   parseOtpAuthUri,
 } from "@zk-wallet/security";
-import { type VaultClient, VaultScreen } from "@zk-wallet/ui";
+import type { VaultClient } from "@zk-wallet/ui";
 import { createVaultService, type LoginItem, type VaultPublicState } from "@zk-wallet/vault";
-import { useEffect, useRef, useState } from "react";
-import { BIOMETRIC_FILL_TYPE } from "../../src/autofill";
-import { writeAutofillMetadataIndex } from "../../src/autofillIndex";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { BIOMETRIC_FILL_TYPE, SHOW_AUTOFILL_TYPE } from "../../src/autofill";
+import { readAutofillMetadataIndex, writeAutofillMetadataIndex } from "../../src/autofillIndex";
+import { createExtensionDevicePrfProvider } from "../../src/devicePrf";
 import { withExtensionGoogleDriveSync } from "../../src/googleDrive";
 import {
   ExtensionSessionCoordinator,
@@ -21,71 +22,30 @@ import {
   withExtensionSession,
 } from "../../src/session";
 
+const VaultScreen = lazy(async () => {
+  const module = await import("@zk-wallet/ui");
+  return { default: module.VaultScreen };
+});
+
 export interface AppProps {
   readonly client?: VaultClient;
 }
 
-export async function fillActiveTab(client: VaultClient): Promise<string> {
-  if (client.getState().status !== "unlocked") return "Unlock the vault before filling.";
+export async function showInlineAutofill(): Promise<string> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined || tab.url === undefined) return "The active page is unavailable.";
-  if (client.listItems === undefined) return "Encrypted login access is unavailable.";
-  const logins = (await client.listItems()).filter(
-    (item): item is LoginItem => item.type === "login",
-  );
-  const decision = decideAutofill({
-    credentials: logins.map((item) => ({ id: item.id, uris: item.uris })),
-    frameUrl: tab.url,
-    topUrl: tab.url,
-    userInitiated: true,
-  });
-  if (!decision.allowed) {
-    return decision.reason === "AMBIGUOUS_ACCOUNT"
-      ? "Choose an account in the vault; automatic selection is unsafe."
-      : "No exact, secure login match is available for this page.";
-  }
-  const login = logins.find((item) => item.id === decision.credentialId);
-  if (login === undefined) return "The selected login is unavailable.";
-  const results = await browser.scripting.executeScript({
-    args: [login.username, login.password],
-    func: (username: string, password: string) => {
-      if (
-        window.top !== window ||
-        location.protocol !== "https:" ||
-        document.defaultView?.location.origin !== location.origin
-      ) {
-        return false;
-      }
-      const inputs = [...document.querySelectorAll<HTMLInputElement>("input")].filter(
-        (input) =>
-          input.isConnected && !input.disabled && !input.readOnly && input.type !== "hidden",
-      );
-      const passwordInput = inputs.find(
-        (input) =>
-          input.type === "password" ||
-          ["current-password", "new-password"].includes(input.autocomplete),
-      );
-      if (passwordInput === undefined) return false;
-      const usernameInput =
-        inputs.find((input) => ["email", "username"].includes(input.autocomplete)) ??
-        inputs.find((input) => ["email", "text"].includes(input.type));
-      const setValue = (input: HTMLInputElement, value: string) => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-          input,
-          value,
-        );
-        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      };
-      if (usernameInput !== undefined) setValue(usernameInput, username);
-      setValue(passwordInput, password);
-      return true;
-    },
-    target: { frameIds: [0], tabId: tab.id },
-  });
-  return results[0]?.result === true
-    ? `Filled the exact origin ${decision.displayHost}.`
-    : "No safe standard login form was found.";
+  if (!tab.url.startsWith("https://")) return "Passwords only runs on secure web pages.";
+  const response = (await browser.tabs.sendMessage(tab.id, {
+    type: SHOW_AUTOFILL_TYPE,
+    version: 1,
+  })) as { readonly shown?: boolean } | undefined;
+  return response?.shown === true
+    ? "Passwords opened beside the relevant field."
+    : "No supported login, signup, or contact field was found.";
+}
+
+export async function openVaultManager(): Promise<void> {
+  await browser.tabs.create({ url: browser.runtime.getURL("/popup.html?mode=manager") });
 }
 
 interface CaptureProposal {
@@ -218,7 +178,7 @@ function createLocalVaultClient(): VaultClient {
   const crypto = createCryptoProvider();
   const client = createVaultService({
     crypto,
-    devicePrf: createWebAuthnPrfProvider(),
+    devicePrf: createExtensionDevicePrfProvider(),
     itemRepository: new IndexedDbItemRevisionRepository(),
     repository: new IndexedDbVaultHeaderRepository(),
   });
@@ -276,6 +236,27 @@ interface AuthenticatedAutofillTarget {
   readonly usernameHint?: string;
 }
 
+interface CaptureAuthenticationTarget {
+  readonly displayHost: string;
+  readonly tabId: number;
+}
+
+export function captureAuthenticationTarget(search: string): CaptureAuthenticationTarget | null {
+  const parameters = new URLSearchParams(search);
+  if ([...parameters.keys()].sort().join(",") !== "displayHost,mode,tabId") return null;
+  if (parameters.get("mode") !== "capture-auth") return null;
+  const tabId = Number(parameters.get("tabId"));
+  const displayHost = parameters.get("displayHost")?.trim() ?? "";
+  if (
+    !Number.isSafeInteger(tabId) ||
+    tabId < 0 ||
+    displayHost.length === 0 ||
+    displayHost.length > 253
+  )
+    return null;
+  return { displayHost, tabId };
+}
+
 export function authenticatedAutofillTarget(search: string): AuthenticatedAutofillTarget | null {
   const parameters = new URLSearchParams(search);
   const mode = parameters.get("mode");
@@ -324,6 +305,183 @@ export function authenticatedAutofillTarget(search: string): AuthenticatedAutofi
   }
 }
 
+function CaptureAuthentication({
+  client,
+  target,
+}: {
+  readonly client: VaultClient;
+  readonly target: CaptureAuthenticationTarget;
+}) {
+  const [state, setState] = useState<VaultPublicState | { readonly status: "preparing" }>({
+    status: "preparing",
+  });
+  const [manualPassword, setManualPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [useMasterPassword, setUseMasterPassword] = useState(false);
+  const [status, setStatus] = useState("Choose how to confirm this save.");
+  const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = client.subscribe((nextState) => {
+      if (active) setState(nextState);
+    });
+    void client
+      .initialize()
+      .then((nextState) => {
+        if (!active) return;
+        setState(nextState);
+        if (nextState.status === "unlocked") window.close();
+        else if ("deviceUnlock" in nextState && nextState.deviceUnlock.slots.length === 0) {
+          setUseMasterPassword(true);
+          setStatus("Enter your master password to save this login.");
+        }
+      })
+      .catch(() => {
+        if (active) setStatus("The encrypted vault could not be opened.");
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [client]);
+
+  const unlockWithDevice = async () => {
+    const slot = slots[0];
+    if (slot === undefined) {
+      setUseMasterPassword(true);
+      setStatus("Enter your master password to save this login.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Confirm with Touch ID.");
+    try {
+      await client.unlockWithDevice(slot.id);
+      setStatus("Login saved.");
+      window.close();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const retryable = message.includes("canceled or timed out");
+      setStatus(
+        retryable
+          ? "Touch ID was canceled."
+          : message.includes("not available to this app")
+            ? "This Touch ID enrollment belongs to another app or browser profile. Use your master password and replace it in Settings."
+            : message.includes("not supported")
+              ? "Touch ID is unavailable in this browser profile."
+              : "Touch ID could not unlock this vault. Use your master password and repair device unlock in Settings.",
+      );
+      if (!retryable) setUseMasterPassword(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unlockWithPassword = async () => {
+    if (manualPassword.length === 0) return;
+    setBusy(true);
+    setStatus("Unlocking and saving…");
+    const password = manualPassword;
+    setManualPassword("");
+    try {
+      await client.unlock(password);
+      setStatus("Login saved.");
+      window.close();
+    } catch {
+      setStatus("Unable to unlock. Check the master password.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="biometric-shell">
+      <section className="biometric-card" aria-labelledby="capture-auth-title">
+        <header className="biometric-header">
+          <span className="biometric-symbol" aria-hidden="true">
+            ◎
+          </span>
+          <span>
+            <p className="eyebrow">Passwords</p>
+            <h1 id="capture-auth-title">
+              {useMasterPassword ? "Unlock to save" : "Touch ID to save"}
+            </h1>
+            <p className="biometric-host">{target.displayHost}</p>
+          </span>
+        </header>
+        {useMasterPassword ? (
+          <form
+            className="biometric-password-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void unlockWithPassword();
+            }}
+          >
+            <label htmlFor="capture-master-password">Master password</label>
+            <input
+              autoComplete="current-password"
+              disabled={busy}
+              id="capture-master-password"
+              onChange={(event) => setManualPassword(event.target.value)}
+              type="password"
+              value={manualPassword}
+            />
+            <button
+              className="biometric-action"
+              disabled={busy || manualPassword.length === 0}
+              type="submit"
+            >
+              {busy ? "Saving…" : "Save Login"}
+            </button>
+            {slots.length > 0 ? (
+              <button
+                className="biometric-switch biometric-password-switch"
+                disabled={busy}
+                onClick={() => {
+                  setUseMasterPassword(false);
+                  setStatus("Choose how to confirm this save.");
+                }}
+                type="button"
+              >
+                Use Touch ID
+              </button>
+            ) : null}
+          </form>
+        ) : (
+          <div className="biometric-verification">
+            <span className="biometric-pulse" aria-hidden="true">
+              ◎
+            </span>
+            <strong>Touch ID</strong>
+            <button
+              className="biometric-action"
+              disabled={busy || state.status === "preparing"}
+              onClick={() => void unlockWithDevice()}
+              type="button"
+            >
+              {busy ? "Waiting…" : "Save with Touch ID"}
+            </button>
+            <button
+              className="biometric-switch biometric-fallback"
+              disabled={busy}
+              onClick={() => setUseMasterPassword(true)}
+              type="button"
+            >
+              Use Master Password
+            </button>
+          </div>
+        )}
+        <p className="biometric-status" aria-live="polite">
+          {status}
+        </p>
+        <button className="biometric-cancel" onClick={() => window.close()} type="button">
+          Cancel
+        </button>
+      </section>
+    </main>
+  );
+}
+
 function AuthenticatedAutofill({
   client,
   target,
@@ -341,8 +499,8 @@ function AuthenticatedAutofill({
   const [submitAfterFill] = useState(target.submitAfterFill ?? false);
   const [matches, setMatches] = useState<readonly LoginItem[]>([]);
   const [noMatch, setNoMatch] = useState(false);
-  const autoBiometricStarted = useRef(false);
-  const authenticateWithDeviceRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const autoStartRef = useRef(false);
+  const preserveUnlockedSessionRef = useRef(false);
   const slots = "deviceUnlock" in state ? state.deviceUnlock.slots : [];
 
   useEffect(() => {
@@ -370,8 +528,8 @@ function AuthenticatedAutofill({
         setState(nextState);
         setStatus(
           nextState.status === "locked"
-            ? "Confirm your identity to release one matching password."
-            : "Password AutoFill is ready.",
+            ? "Preparing secure AutoFill…"
+            : "Filling from your unlocked vault…",
         );
       })
       .catch(() => {
@@ -380,7 +538,6 @@ function AuthenticatedAutofill({
     return () => {
       active = false;
       unsubscribe();
-      client.lock();
     };
   }, [client]);
 
@@ -394,16 +551,29 @@ function AuthenticatedAutofill({
     setBusy(true);
     setStatus(`Filling ${new URL(target.topUrl).hostname}…`);
     try {
-      const response = (await browser.tabs.sendMessage(target.tabId, {
+      const request = {
         password: login.password,
         submit: submitAfterFill,
         topUrl: target.topUrl,
         type: BIOMETRIC_FILL_TYPE,
         username: login.username,
         version: 1,
-      })) as { readonly filled?: boolean; readonly submitted?: boolean } | undefined;
+      } as const;
+      let response: { readonly filled?: boolean; readonly submitted?: boolean } | undefined;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3 && response?.filled !== true; attempt += 1) {
+        try {
+          response = (await browser.tabs.sendMessage(target.tabId, request)) as typeof response;
+        } catch (error) {
+          lastError = error;
+        }
+      }
       if (response?.filled !== true) {
-        setStatus("The login form changed before the password could be filled.");
+        setStatus(
+          lastError === undefined
+            ? "No stable login form accepted the password."
+            : "The password could not be delivered to the original secure page.",
+        );
         return;
       }
       setStatus(
@@ -415,7 +585,12 @@ function AuthenticatedAutofill({
     } catch {
       setStatus("The password could not be delivered to the original secure page.");
     } finally {
-      relock();
+      if (preserveUnlockedSessionRef.current) {
+        setManualPassword("");
+        setMatches([]);
+      } else {
+        relock();
+      }
       setBusy(false);
     }
   };
@@ -453,7 +628,7 @@ function AuthenticatedAutofill({
     if (logins.length === 0) {
       setStatus("No exact-origin password is saved for this page.");
       setNoMatch(true);
-      relock();
+      if (!preserveUnlockedSessionRef.current) relock();
     } else if (logins.length === 1) {
       const login = logins[0];
       if (login !== undefined) await fill(login);
@@ -466,44 +641,37 @@ function AuthenticatedAutofill({
   const authenticateWithDevice = async () => {
     const slot = slots[0];
     if (slot === undefined || client.listItems === undefined) {
-      setStatus("Enroll this device from Passwords settings before using biometric AutoFill.");
+      setStatus("Enter your master password to continue.");
       setUseMasterPassword(true);
       return;
     }
+    preserveUnlockedSessionRef.current = false;
     setBusy(true);
     setNoMatch(false);
-    setStatus("Waiting for Touch ID, Windows Hello, or your security key…");
+    setStatus("Touch the biometric sensor to fill.");
     try {
       await client.unlockWithDevice(slot.id);
       await handleMatches(await findMatches());
-    } catch {
-      setStatus("Biometric verification was canceled or is unavailable on this device.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setStatus(
+        message.includes("not available to this app")
+          ? "Touch ID was enrolled in another app or browser profile. Unlock with your master password, then replace this device enrollment in Settings."
+          : message.includes("not supported")
+            ? "Touch ID is unavailable in this browser profile. Use your master password."
+            : message.includes("canceled or timed out")
+              ? "Touch ID was canceled."
+              : "Touch ID could not release this credential. Use your master password, then repair device unlock in Settings.",
+      );
+      setUseMasterPassword(true);
       relock();
     } finally {
       setBusy(false);
     }
   };
-  authenticateWithDeviceRef.current = authenticateWithDevice;
-
-  useEffect(() => {
-    if (
-      target.method !== "biometric" ||
-      state.status === "preparing" ||
-      useMasterPassword ||
-      autoBiometricStarted.current
-    ) {
-      return;
-    }
-    autoBiometricStarted.current = true;
-    if (slots.length === 0) {
-      setStatus("Biometrics are unavailable. Enter your master password instead.");
-      setUseMasterPassword(true);
-      return;
-    }
-    void authenticateWithDeviceRef.current();
-  }, [state.status, target.method, useMasterPassword, slots.length]);
 
   const authenticateWithPassword = async (password: string) => {
+    preserveUnlockedSessionRef.current = false;
     setManualPassword("");
     setBusy(true);
     setNoMatch(false);
@@ -518,6 +686,41 @@ function AuthenticatedAutofill({
       setBusy(false);
     }
   };
+
+  const fillFromUnlockedVault = async () => {
+    setBusy(true);
+    setNoMatch(false);
+    try {
+      await handleMatches(await findMatches());
+    } catch {
+      setStatus("The unlocked vault could not read this saved login.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // This is an intentional one-shot transition after vault initialization. The ref prevents
+  // subscription updates from restarting biometric verification or releasing a credential twice.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot authentication state machine
+  useEffect(() => {
+    if (state.status === "preparing" || autoStartRef.current) return;
+    autoStartRef.current = true;
+
+    if (state.status === "unlocked") {
+      preserveUnlockedSessionRef.current = true;
+      setStatus("Filling from your unlocked vault…");
+      void fillFromUnlockedVault();
+      return;
+    }
+
+    if (slots.length > 0) {
+      void authenticateWithDevice();
+      return;
+    }
+
+    setUseMasterPassword(true);
+    setStatus("Enter your master password to continue.");
+  }, [state.status, slots.length]);
 
   return (
     <main className="biometric-shell">
@@ -579,9 +782,8 @@ function AuthenticatedAutofill({
                 disabled={busy}
                 onClick={() => {
                   setManualPassword("");
-                  autoBiometricStarted.current = false;
                   setUseMasterPassword(false);
-                  setStatus("Touch the biometric sensor to fill.");
+                  void authenticateWithDevice();
                 }}
                 type="button"
               >
@@ -591,22 +793,10 @@ function AuthenticatedAutofill({
           </form>
         ) : matches.length === 0 ? (
           <div className="biometric-verification">
-            <span
-              className={busy ? "biometric-pulse is-active" : "biometric-pulse"}
-              aria-hidden="true"
-            >
+            <span className="biometric-pulse" aria-hidden="true">
               ◎
             </span>
-            <strong>{busy ? "Touch the sensor" : "Biometric verification"}</strong>
-            {!busy && state.status !== "preparing" ? (
-              <button
-                className="biometric-action"
-                onClick={() => void authenticateWithDevice()}
-                type="button"
-              >
-                Try Touch ID Again
-              </button>
-            ) : null}
+            <strong>{busy ? "Waiting for Touch ID" : "Touch ID"}</strong>
             <button
               className="biometric-switch biometric-fallback"
               disabled={busy}
@@ -636,7 +826,7 @@ function AuthenticatedAutofill({
         <button
           className="biometric-cancel"
           onClick={() => {
-            relock();
+            if (!preserveUnlockedSessionRef.current) relock();
             window.close();
           }}
           type="button"
@@ -651,128 +841,143 @@ function AuthenticatedAutofill({
 export function App({ client }: AppProps) {
   const [vaultClient] = useState(() => client ?? createLocalVaultClient());
   const [autofillTarget] = useState(() => authenticatedAutofillTarget(globalThis.location.search));
+  const [captureTarget] = useState(() => captureAuthenticationTarget(globalThis.location.search));
+  const [managerMode] = useState(
+    () => new URLSearchParams(globalThis.location.search).get("mode") === "manager",
+  );
   const [fillStatus, setFillStatus] = useState("");
-  const [capture, setCapture] = useState<CaptureProposal | null>(null);
+  const [activeHost, setActiveHost] = useState("Current website");
+  const [activeCredentials, setActiveCredentials] = useState<
+    readonly { readonly id: string; readonly username: string }[]
+  >([]);
+  useEffect(() => {
+    if (
+      autofillTarget !== null ||
+      captureTarget !== null ||
+      managerMode ||
+      typeof browser === "undefined"
+    )
+      return;
+    const metadata =
+      browser.storage?.local === undefined
+        ? Promise.resolve([])
+        : readAutofillMetadataIndex(browser.storage.local);
+    void Promise.all([browser.tabs.query({ active: true, currentWindow: true }), metadata])
+      .then(([[tab], metadata]) => {
+        if (tab?.url === undefined) return;
+        try {
+          const target = new URL(tab.url);
+          setActiveHost(target.hostname || "Current website");
+          setActiveCredentials(
+            metadata
+              .filter((entry) => entry.origins.includes(target.origin))
+              .map(({ id, username }) => ({ id, username }))
+              .filter(
+                (credential, index, credentials) =>
+                  credentials.findIndex(
+                    (candidate) =>
+                      candidate.username.trim().toLocaleLowerCase() ===
+                      credential.username.trim().toLocaleLowerCase(),
+                  ) === index,
+              ),
+          );
+        } catch {
+          setActiveHost("Current website");
+          setActiveCredentials([]);
+        }
+      })
+      .catch(() => {
+        setActiveHost("Current website");
+        setActiveCredentials([]);
+      });
+  }, [autofillTarget, captureTarget, managerMode]);
   if (autofillTarget !== null) {
     return <AuthenticatedAutofill client={vaultClient} target={autofillTarget} />;
   }
+  if (captureTarget !== null) {
+    return <CaptureAuthentication client={vaultClient} target={captureTarget} />;
+  }
+  if (managerMode) {
+    return (
+      <Suspense fallback={<p role="status">Opening encrypted vault…</p>}>
+        <VaultScreen
+          client={vaultClient}
+          providerConfiguration={{ googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID }}
+          surface="Browser extension"
+        />
+      </Suspense>
+    );
+  }
   return (
-    <>
-      <VaultScreen
-        client={vaultClient}
-        providerConfiguration={{ googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID }}
-        surface="Browser extension"
-      />
-      <section className="browser-tools" aria-label="Browser login tools">
+    <main className="toolbar-shell">
+      <section className="browser-tools" aria-label="Password tools for this page">
         <header className="browser-tools-header">
           <span className="browser-tools-symbol" aria-hidden="true">
             •••
           </span>
           <span>
-            <strong>AutoFill</strong>
-            <small>Current website</small>
+            <strong>Passwords</strong>
+            <small>{activeHost}</small>
           </span>
         </header>
+        {activeCredentials.map((credential) => (
+          <button
+            aria-label={`Fill ${credential.username}`}
+            className="browser-tool-button browser-tool-primary"
+            key={credential.id}
+            type="button"
+            onClick={() => {
+              setFillStatus("Opening beside the sign-in field…");
+              void showInlineAutofill()
+                .then((status) => {
+                  setFillStatus(status);
+                  if (status.startsWith("Passwords opened")) window.close();
+                })
+                .catch(() =>
+                  setFillStatus("Reload this page once so Passwords can attach securely."),
+                );
+            }}
+          >
+            <span className="browser-tool-icon" aria-hidden="true">
+              ◎
+            </span>
+            <span className="browser-tool-copy">
+              <strong>{credential.username}</strong>
+              <small>Fill this login</small>
+            </span>
+            <span className="browser-tool-chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+        ))}
         <button
+          aria-label="Open Vault Manager"
           className="browser-tool-button"
           type="button"
           onClick={() => {
-            setFillStatus("Checking the active site…");
-            void fillActiveTab(vaultClient)
-              .then(setFillStatus)
-              .catch(() => setFillStatus("Autofill could not access this page."));
+            setFillStatus("Opening vault manager…");
+            void openVaultManager()
+              .then(() => window.close())
+              .catch(() => {
+                setFillStatus("The vault manager could not be opened.");
+              });
           }}
         >
-          <span aria-hidden="true">↗</span>
-          <span>Fill Password</span>
-        </button>
-        <button
-          className="browser-tool-button"
-          type="button"
-          onClick={() => {
-            setCapture(null);
-            setFillStatus("Inspecting the current login form…");
-            void captureActiveTab(vaultClient)
-              .then((result) => {
-                if (typeof result === "string") setFillStatus(result);
-                else {
-                  setCapture(result);
-                  setFillStatus("");
-                }
-              })
-              .catch(() => setFillStatus("The login form could not be captured safely."));
-          }}
-        >
-          <span aria-hidden="true">＋</span>
-          <span>Save or Update Password</span>
-        </button>
-        <button
-          className="browser-tool-button"
-          type="button"
-          onClick={() => {
-            setFillStatus("Checking for an exact-origin authenticator…");
-            void fillActiveTotp(vaultClient)
-              .then(setFillStatus)
-              .catch(() => setFillStatus("The authenticator code could not be filled safely."));
-          }}
-        >
-          <span aria-hidden="true">⌁</span>
-          <span>Fill Verification Code</span>
+          <span className="browser-tool-icon" aria-hidden="true">
+            ◫
+          </span>
+          <span className="browser-tool-copy">
+            <strong>Open Passwords</strong>
+            <small>Manage logins, notes, and personal details</small>
+          </span>
+          <span className="browser-tool-chevron" aria-hidden="true">
+            ›
+          </span>
         </button>
         <p className="browser-tool-status" aria-live="polite">
           {fillStatus}
         </p>
-        {capture === null ? null : (
-          <div className="capture-sheet" role="dialog" aria-labelledby="capture-title">
-            <h2 id="capture-title">{capture.action === "save" ? "Save login" : "Update login"}</h2>
-            <p>
-              Confirm {capture.action} for the exact origin <strong>{capture.displayHost}</strong>.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                const operation =
-                  capture.action === "save"
-                    ? vaultClient.createLogin?.({
-                        notes: "",
-                        password: capture.password,
-                        title: capture.displayHost,
-                        uris: [capture.canonicalOrigin],
-                        username: capture.username,
-                      })
-                    : capture.existingId !== undefined && capture.existingRevisionId !== undefined
-                      ? vaultClient.updateLogin?.(capture.existingId, capture.existingRevisionId, {
-                          notes: "",
-                          password: capture.password,
-                          title: capture.displayHost,
-                          uris: [capture.canonicalOrigin],
-                          username: capture.username,
-                        })
-                      : undefined;
-                if (operation === undefined) {
-                  setCapture(null);
-                  setFillStatus("Encrypted login saving is unavailable.");
-                  return;
-                }
-                void operation
-                  .then(() => {
-                    setCapture(null);
-                    setFillStatus(capture.action === "save" ? "Login saved." : "Login updated.");
-                  })
-                  .catch(() => {
-                    setCapture(null);
-                    setFillStatus("The login changed or could not be saved.");
-                  });
-              }}
-            >
-              Confirm {capture.action}
-            </button>
-            <button type="button" onClick={() => setCapture(null)}>
-              Cancel
-            </button>
-          </div>
-        )}
       </section>
-    </>
+    </main>
   );
 }

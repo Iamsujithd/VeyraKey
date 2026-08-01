@@ -30,12 +30,32 @@ function client(initialStatus: "needs-setup" | "locked" | "unlocked"): VaultClie
 
   return {
     changeMasterPassword: vi.fn(async () => unlocked),
+    createIdentityProfile: vi.fn(async (input) => ({
+      ...input,
+      createdAt: "2026-07-25T00:00:00.000Z",
+      id: "profile",
+      revisionId: "revision",
+      type: "identity-profile" as const,
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    })),
     createLogin: vi.fn(async (input) => ({
       ...input,
       createdAt: "2026-07-25T00:00:00.000Z",
       id: "item",
       revisionId: "revision",
       type: "login" as const,
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    })),
+    createItemShare: vi.fn(async (_itemId, expiresAt) => ({
+      bundle: { expiresAt, shareId: "share-id" },
+      secret: "separate-share-secret",
+    })),
+    createPaymentCard: vi.fn(async (input) => ({
+      ...input,
+      createdAt: "2026-07-25T00:00:00.000Z",
+      id: "payment-card",
+      revisionId: "revision",
+      type: "payment-card" as const,
       updatedAt: "2026-07-25T00:00:00.000Z",
     })),
     createSecureNote: vi.fn(async (input) => ({
@@ -51,11 +71,13 @@ function client(initialStatus: "needs-setup" | "locked" | "unlocked"): VaultClie
     enrollDevice: vi.fn(async () => unlocked),
     getState: vi.fn(() => initial),
     initialize: vi.fn(async () => initial),
+    listItemHistory: vi.fn(async () => []),
     listItems: vi.fn(async () => []),
     lock: vi.fn(() => locked),
     recordActivity: vi.fn(),
     replaceRecoveryKit: vi.fn(async () => unlocked),
     restoreVault: vi.fn(async () => unlocked),
+    restoreItemRevision: vi.fn(),
     revokeDevice: vi.fn(async () => unlocked),
     stepUpCompartment: vi.fn(async () => unlocked),
     subscribe: vi.fn(() => () => undefined),
@@ -63,6 +85,8 @@ function client(initialStatus: "needs-setup" | "locked" | "unlocked"): VaultClie
     unlockWithDevice: vi.fn(async () => unlocked),
     unlockWithRecoveryKit: vi.fn(async () => unlocked),
     updateLogin: vi.fn(),
+    updateIdentityProfile: vi.fn(),
+    updatePaymentCard: vi.fn(),
     updateSecureNote: vi.fn(),
     verifyRecoveryKit: vi.fn(async () => unlocked),
   };
@@ -101,8 +125,8 @@ describe("VaultScreen", () => {
     await waitFor(() =>
       expect(vaultClient.createVault).toHaveBeenCalledWith("correct horse battery staple"),
     );
-    expect(await screen.findByRole("heading", { name: "Vault unlocked" })).toBeInTheDocument();
-    expect(screen.getByText(/empty root compartment is open/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Passwords" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No saved items" })).toBeInTheDocument();
   });
 
   it("prevents mismatched confirmation without invoking cryptography", async () => {
@@ -122,6 +146,29 @@ describe("VaultScreen", () => {
     expect(vaultClient.createVault).not.toHaveBeenCalled();
   });
 
+  it("defaults to configured cloud storage while keeping local-only setup explicit", async () => {
+    const vaultClient = client("needs-setup");
+    vaultClient.syncGoogleDrive = vi.fn(async () => ({
+      conflicts: [],
+      itemCount: 0,
+      quarantined: 0,
+      revisionCount: 0,
+      uploaded: 0,
+    }));
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Browser extension"
+      />,
+    );
+    await screen.findByRole("heading", { name: "Create your local vault" });
+
+    expect(screen.getByRole("radio", { name: /Google Drive/u })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /This device only/u }));
+    expect(screen.getByText(/Local-only mode is selected/u)).toBeInTheDocument();
+  });
+
   it("collapses wrong-password and corruption failures into a safe unlock error", async () => {
     const vaultClient = client("locked");
     vi.mocked(vaultClient.unlock).mockRejectedValueOnce(
@@ -130,7 +177,7 @@ describe("VaultScreen", () => {
       }),
     );
     render(<VaultScreen client={vaultClient} surface="Browser extension" />);
-    await screen.findByRole("heading", { name: "Vault locked" });
+    await screen.findByRole("heading", { name: "Unlock" });
 
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "wrong password" },
@@ -138,7 +185,7 @@ describe("VaultScreen", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Master password")).toHaveValue("wrong password"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Unlock vault" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
 
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent(
@@ -151,16 +198,32 @@ describe("VaultScreen", () => {
   it("locks an unlocked vault and returns to the password form", async () => {
     const vaultClient = client("unlocked");
     render(<VaultScreen client={vaultClient} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Vault unlocked" });
+    await screen.findByRole("heading", { name: "Passwords" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Lock vault" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lock Passwords" }));
 
     expect(vaultClient.lock).toHaveBeenCalledOnce();
-    expect(screen.getByRole("heading", { name: "Vault locked" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Unlock" })).toBeInTheDocument();
     expect(screen.getByLabelText("Master password")).toHaveValue("");
   });
 
-  it("presents local password health accessibly without making a network request", async () => {
+  it("keeps the item editor out of the vault overview until the user asks to add an item", async () => {
+    const vaultClient = client("unlocked");
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+
+    await screen.findByRole("heading", { name: "Passwords" });
+    expect(screen.getByRole("heading", { name: "No saved items" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Title")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    expect(screen.getByRole("heading", { name: "Add to your vault" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close item editor" }));
+    expect(screen.queryByLabelText("Title")).not.toBeInTheDocument();
+  });
+
+  it("presents concise security recommendations without inventing password age", async () => {
     const vaultClient = client("unlocked");
     const listItems = vaultClient.listItems;
     if (listItems === undefined) throw new Error("Fixture client must list items");
@@ -181,22 +244,26 @@ describe("VaultScreen", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     render(<VaultScreen client={vaultClient} surface="Web application" />);
 
-    await screen.findByRole("heading", { name: "Vault unlocked" });
-    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
-    expect(screen.getByRole("heading", { name: "Password health" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    expect(screen.getByRole("heading", { name: "Security" })).toBeInTheDocument();
     await screen.findAllByText("Health fixture");
-    fireEvent.click(screen.getByRole("button", { name: "Analyze passwords locally" }));
-
-    expect(await screen.findByText(/weak · not reused/u)).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/analyzed 1 login\(s\) locally/i);
+    expect(await screen.findAllByText("Weak password")).not.toHaveLength(0);
+    expect(screen.queryByText(/\bold\b/iu)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh security recommendations" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /security recommendations updated on this device/i,
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
   it("creates a login through the shared encrypted-item form and clears its password", async () => {
     const vaultClient = client("unlocked");
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline fixture"));
     render(<VaultScreen client={vaultClient} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Vault unlocked" });
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Example" } });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "person" } });
@@ -208,6 +275,10 @@ describe("VaultScreen", () => {
 
     await waitFor(() =>
       expect(vaultClient.createLogin).toHaveBeenCalledWith({
+        breachCheck: {
+          checkedAt: expect.any(String),
+          status: "unavailable",
+        },
         favorite: false,
         folder: "",
         notes: "",
@@ -219,7 +290,178 @@ describe("VaultScreen", () => {
         username: "person",
       }),
     );
-    expect(screen.getByLabelText("Password")).toHaveValue("");
+    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+  });
+
+  it("restores immutable item history as a new conflict-protected revision", async () => {
+    const vaultClient = client("unlocked");
+    const listItems = vaultClient.listItems;
+    const listItemHistory = vaultClient.listItemHistory;
+    const restoreItemRevision = vaultClient.restoreItemRevision;
+    if (
+      listItems === undefined ||
+      listItemHistory === undefined ||
+      restoreItemRevision === undefined
+    ) {
+      throw new Error("Fixture client must support item history");
+    }
+    const current = {
+      createdAt: "2026-07-25T00:00:00.000Z",
+      id: "history-item",
+      notes: "",
+      password: "current-password",
+      revisionId: "current-revision",
+      title: "History fixture",
+      type: "login" as const,
+      updatedAt: "2026-07-26T00:00:00.000Z",
+      uris: ["https://history.example"],
+      username: "person",
+    };
+    const earlier = {
+      ...current,
+      password: "earlier-password",
+      revisionId: "earlier-revision",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    };
+    vi.mocked(listItems).mockResolvedValue([current]);
+    vi.mocked(listItemHistory).mockResolvedValue([
+      { item: current, operation: "update", revisionId: current.revisionId },
+      {
+        item: earlier,
+        operation: "create",
+        revisionId: earlier.revisionId,
+      },
+    ]);
+    vi.mocked(restoreItemRevision).mockResolvedValue({
+      ...earlier,
+      revisionId: "restored-revision",
+      updatedAt: "2026-07-27T00:00:00.000Z",
+    });
+
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+    await screen.findByText("History fixture");
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(await screen.findByLabelText("Version history for History fixture")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(restoreItemRevision).toHaveBeenCalledWith(
+        current.id,
+        earlier.revisionId,
+        current.revisionId,
+      ),
+    );
+  });
+
+  it("keeps an encrypted item share separate from its out-of-band secret", async () => {
+    const vaultClient = client("unlocked");
+    const listItems = vaultClient.listItems;
+    const createItemShare = vaultClient.createItemShare;
+    if (listItems === undefined || createItemShare === undefined) {
+      throw new Error("Fixture client must support encrypted sharing");
+    }
+    vi.mocked(listItems).mockResolvedValue([
+      {
+        createdAt: "2026-07-25T00:00:00.000Z",
+        id: "share-item",
+        notes: "",
+        password: "private-password",
+        revisionId: "share-revision",
+        title: "Share fixture",
+        type: "login",
+        updatedAt: "2026-07-25T00:00:00.000Z",
+        uris: ["https://share.example"],
+        username: "person",
+      },
+    ]);
+
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+    await screen.findByText("Share fixture");
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() =>
+      expect(createItemShare).toHaveBeenCalledWith("share-item", expect.any(String)),
+    );
+    expect(await screen.findByRole("dialog", { name: "Share Share fixture" })).toBeVisible();
+    expect(screen.getByDisplayValue("separate-share-secret")).toHaveAttribute("readonly");
+    expect(screen.getByText(/separate channels/i)).toBeVisible();
+  });
+
+  it("creates an encrypted identity profile with contact, address, and age fields", async () => {
+    const vaultClient = client("unlocked");
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    fireEvent.change(screen.getByLabelText("Item type"), {
+      target: { value: "identity-profile" },
+    });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Personal" } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByLabelText("Last name"), { target: { value: "Lovelace" } });
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "36" } });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "ada@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("City"), { target: { value: "London" } });
+    fireEvent.change(screen.getByLabelText("Country"), { target: { value: "United Kingdom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save encrypted item" }));
+
+    await waitFor(() =>
+      expect(vaultClient.createIdentityProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          age: "36",
+          city: "London",
+          country: "United Kingdom",
+          email: "ada@example.test",
+          firstName: "Ada",
+          lastName: "Lovelace",
+          title: "Personal",
+        }),
+      ),
+    );
+  });
+
+  it("creates an encrypted payment card and keeps secondary details disclosed on demand", async () => {
+    const vaultClient = client("unlocked");
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    fireEvent.change(screen.getByLabelText("Item type"), {
+      target: { value: "payment-card" },
+    });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Travel card" } });
+    fireEvent.change(screen.getByLabelText("Name on card"), {
+      target: { value: "Private Person" },
+    });
+    fireEvent.change(screen.getByLabelText("Card number"), {
+      target: { value: "4111 1111 1111 1111" },
+    });
+    fireEvent.change(screen.getByLabelText("Expiry month"), { target: { value: "12" } });
+    fireEvent.change(screen.getByLabelText("Expiry year"), { target: { value: "2030" } });
+    expect(screen.getByText(/Security codes are never stored/i)).toBeVisible();
+    fireEvent.click(screen.getByText("Billing details"));
+    fireEvent.change(screen.getByLabelText("Billing address"), {
+      target: { value: "1 Private Way" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save encrypted item" }));
+
+    await waitFor(() =>
+      expect(vaultClient.createPaymentCard).toHaveBeenCalledWith({
+        billingAddress: "1 Private Way",
+        cardNumber: "4111 1111 1111 1111",
+        cardholderName: "Private Person",
+        expiryMonth: "12",
+        expiryYear: "2030",
+        favorite: false,
+        folder: "",
+        notes: "",
+        securityCode: "",
+        tags: [],
+        title: "Travel card",
+      }),
+    );
   });
 
   it("shows every preserved sync conflict for user review", async () => {
@@ -247,22 +489,27 @@ describe("VaultScreen", () => {
     const importItems = vi.fn(async () => []);
     vaultClient.importItems = importItems;
     render(<VaultScreen client={vaultClient} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Vault unlocked" });
-    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByText("Import passwords"));
 
-    fireEvent.change(screen.getByLabelText("Import file contents"), {
+    fireEvent.change(screen.getByLabelText("File contents"), {
       target: {
         value: "title,username,password,url\nExample,person,synthetic,https://example.test\n",
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByLabelText(/Example: valid/i)).toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "Import selected rows atomically" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import selected" }));
     await waitFor(() =>
       expect(importItems).toHaveBeenCalledWith([
         {
           input: expect.objectContaining({
+            breachCheck: expect.objectContaining({
+              checkedAt: expect.any(String),
+              status: expect.stringMatching(/^(found|not-found|unavailable)$/u),
+            }),
             password: "synthetic",
             title: "Example",
           }),
@@ -290,10 +537,10 @@ describe("VaultScreen", () => {
         surface="Web application"
       />,
     );
-    await screen.findByRole("heading", { name: "Vault unlocked" });
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
 
-    const connect = screen.getByRole("button", { name: "Connect Google Drive" });
+    const connect = screen.getByRole("button", { name: "Sync or migrate to Google Drive" });
     expect(connect).toBeEnabled();
     fireEvent.click(connect);
 
@@ -338,6 +585,6 @@ describe("VaultScreen", () => {
         recoveryKit: "recovery-fixture",
       }),
     );
-    expect(await screen.findByRole("heading", { name: "Vault unlocked" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Passwords" })).toBeInTheDocument();
   });
 });

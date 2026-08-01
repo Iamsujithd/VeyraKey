@@ -50,7 +50,7 @@ Using clean browser profiles and synthetic data, the release must demonstrate:
 10. Organize items with tags/favorites/folders and rebuild encrypted search.
 11. Preview and import CSV/Bitwarden fixtures with duplicate warnings and rollback.
 12. Export an encrypted archive and restore it on a clean profile.
-13. Detect weak, reused, old, and fixture-compromised passwords through local/HIBP-safe analysis.
+13. Detect weak, reused, and fixture-compromised passwords through local/HIBP-safe analysis.
 14. Pass the final security, accessibility, performance, offline, provider-failure, and production smoke suites.
 
 ## Release validation
@@ -59,7 +59,7 @@ Using clean browser profiles and synthetic data, the release must demonstrate:
 - Sync model/property and provider-chaos suites pass.
 - Hostile-origin/frame/message fixtures pass.
 - No unresolved critical/high security findings; accepted lower findings are documented.
-- Google OAuth/domain configuration is valid for the published demo.
+- Google OAuth/domain configuration is valid for the intended local or published distribution and is recorded as external evidence before a public-release claim.
 - Reproducible web and extension artifacts, SBOM, dependency lock, migration plan, and rollback plan exist.
 - Privacy notices accurately explain zero knowledge, Google Drive metadata, HIBP requests, endpoint compromise, and best-effort memory/clipboard clearing.
 - Independent review is required before claiming an external audit, not before honestly publishing a portfolio demonstration.

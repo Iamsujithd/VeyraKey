@@ -1,11 +1,37 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+const rootPackage = JSON.parse(await readFile("package.json", "utf8"));
+const extensionPackage = JSON.parse(await readFile("apps/extension/package.json", "utf8"));
+if (rootPackage.version !== extensionPackage.version) {
+  throw new Error(
+    `Release version mismatch: root=${rootPackage.version}, extension=${extensionPackage.version}`,
+  );
+}
+
 const roots = [
   ["web", "apps/web/dist"],
   ["chrome", "apps/extension/.output/chrome-mv3"],
   ["firefox", "apps/extension/.output/firefox-mv3"],
 ];
+
+const reviewedIcons = {
+  16: "icons/icon-16.png",
+  32: "icons/icon-32.png",
+  48: "icons/icon-48.png",
+  128: "icons/icon-128.png",
+};
+
+function readPngSize(bytes) {
+  const signature = "89504e470d0a1a0a";
+  if (bytes.subarray(0, 8).toString("hex") !== signature || bytes.length < 24) {
+    throw new Error("Release icon is not a valid PNG");
+  }
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20),
+  };
+}
 
 async function filesUnder(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -41,11 +67,27 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   const manifest = JSON.parse(
     await readFile(`apps/extension/.output/${browser}/manifest.json`, "utf8"),
   );
+  if (manifest.version !== rootPackage.version) {
+    throw new Error(
+      `${browser} manifest version ${manifest.version} does not match release ${rootPackage.version}`,
+    );
+  }
+  if (manifest.name !== "VeyraKey" || manifest.action?.default_title !== "VeyraKey") {
+    throw new Error(`${browser} manifest does not contain the reviewed VeyraKey identity`);
+  }
+  if (JSON.stringify(manifest.icons) !== JSON.stringify(reviewedIcons)) {
+    throw new Error(`${browser} icon inventory changed without review`);
+  }
+  for (const [size, path] of Object.entries(reviewedIcons)) {
+    const bytes = await readFile(`apps/extension/.output/${browser}/${path}`);
+    const dimensions = readPngSize(bytes);
+    if (dimensions.width !== Number(size) || dimensions.height !== Number(size)) {
+      throw new Error(`${browser}/${path} has incorrect dimensions`);
+    }
+  }
   const permissions = [...(manifest.permissions ?? [])].sort();
-  if (
-    JSON.stringify(permissions) !==
-    JSON.stringify(["activeTab", "identity", "scripting", "storage"])
-  ) {
+  const reviewedPermissions = ["activeTab", "identity", "scripting", "storage"];
+  if (JSON.stringify(permissions) !== JSON.stringify(reviewedPermissions)) {
     throw new Error(`${browser} permissions changed without review`);
   }
   if (
@@ -81,6 +123,13 @@ for (const browser of ["chrome-mv3", "firefox-mv3"]) {
   }
 }
 
+for (const target of ["chrome", "firefox", "sources"]) {
+  const archive = `apps/extension/.output/veyrakey-extension-${rootPackage.version}-${target}.zip`;
+  if ((await stat(archive)).size === 0) {
+    throw new Error(`${archive} is empty`);
+  }
+}
+
 const sbom = JSON.parse(await readFile("release/sbom.cdx.json", "utf8"));
 if (
   sbom.bomFormat !== "CycloneDX" ||
@@ -90,4 +139,6 @@ if (
   throw new Error("Release SBOM is missing or incomplete");
 }
 
-console.log("Production artifact, permission, source-map, secret, size, and SBOM checks passed.");
+console.log(
+  `Release ${rootPackage.version} artifact, version, permission, source-map, secret, size, and SBOM checks passed.`,
+);

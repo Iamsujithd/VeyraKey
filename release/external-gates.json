@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "gates": [
+    {
+      "id": "google-oauth",
+      "title": "Google OAuth consent and real-account recovery matrix",
+      "status": "pending",
+      "owner": "release owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#google-oauth"
+    },
+    {
+      "id": "browser-stores",
+      "title": "Chrome and Firefox store signing and acceptance",
+      "status": "pending",
+      "owner": "release owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#browser-stores"
+    },
+    {
+      "id": "physical-biometrics",
+      "title": "Physical Touch ID, Windows Hello, and security-key matrix",
+      "status": "pending",
+      "owner": "device test owner",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#physical-biometrics"
+    },
+    {
+      "id": "independent-review",
+      "title": "Independent security and accessibility review",
+      "status": "pending",
+      "owner": "independent reviewer",
+      "evidence": [],
+      "instructions": "docs/40-external-release-evidence.md#independent-review"
+    }
+  ]
+}

@@ -1,25 +1,44 @@
 import {
   AUTHENTICATED_AUTOFILL_SELECT_TYPE,
+  AUTOFILL_FILLED_TYPE,
   AUTOFILL_REQUEST_TYPE,
   type AutofillResponse,
-  BIOMETRIC_AUTOFILL_REQUEST_TYPE,
   CAPTURE_CONFIRM_TYPE,
   CAPTURE_DISMISS_TYPE,
   CAPTURE_PENDING_TYPE,
   CAPTURE_REQUEST_TYPE,
+  CARD_AUTOFILL_REQUEST_TYPE,
+  CARD_AUTOFILL_SELECT_TYPE,
   type CaptureResponse,
+  type CardAutofillResponse,
   captureLoginFields,
+  cardFieldKind,
+  credentialsMatch,
+  fillCardField,
   fillLoginFields,
+  fillProfileField,
+  fillRegistrationPasswordFields,
+  generateAdaptiveRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isRegistrationPasswordField,
   isUsernameField,
-  MANUAL_AUTOFILL_REQUEST_TYPE,
+  OPEN_VAULT_MANAGER_TYPE,
+  PROFILE_AUTOFILL_REQUEST_TYPE,
+  PROFILE_AUTOFILL_SELECT_TYPE,
+  type ProfileAutofillResponse,
   parseBiometricFillRequest,
+  parseShowAutofillRequest,
+  profileFieldKind,
+  type RegistrationPasswordStyle,
   readExtensionRuntimeIdSafely,
+  registrationPasswordPolicy,
+  SHOW_AUTOFILL_TYPE,
   sendRuntimeMessageSafely,
   shouldDismissSuggestionsForUsername,
   submitLoginForm,
   USERNAME_OBSERVED_TYPE,
+  usernameFieldForCredentialAnchor,
 } from "../src/autofill";
 
 export default defineContentScript({
@@ -35,6 +54,10 @@ export default defineContentScript({
     let queuedSuggestionAnchor: Element | null = null;
     let extensionContextActive = true;
     let observer: MutationObserver | null = null;
+    let lastFilledCredential: { readonly password: string; readonly username: string } | null =
+      null;
+    const suppressedUsernameInputs = new WeakSet<HTMLInputElement>();
+    const generatedPasswords = new WeakMap<object, Map<RegistrationPasswordStyle, string>>();
     const closePrompt = () => {
       promptCleanup?.();
       promptCleanup = null;
@@ -238,10 +261,13 @@ export default defineContentScript({
         const label = document.createElement("span");
         label.className = "label";
         label.textContent = option.label;
-        const detail = document.createElement("span");
-        detail.className = "detail";
-        detail.textContent = option.detail ?? subtitle;
-        copy.append(label, detail);
+        copy.append(label);
+        if (option.detail !== undefined && option.detail.length > 0) {
+          const detail = document.createElement("span");
+          detail.className = "detail";
+          detail.textContent = option.detail;
+          copy.append(detail);
+        }
         const chevron = document.createElement("span");
         chevron.className = "chevron";
         chevron.textContent = "›";
@@ -295,6 +321,8 @@ export default defineContentScript({
 
     const requestSuggestions = (anchor: Element | null) => {
       if (!extensionContextActive) return;
+      const usernameField = usernameFieldForCredentialAnchor(document, anchor);
+      if (usernameField !== null && suppressedUsernameInputs.has(usernameField)) return;
       if (requestInProgress) {
         queuedSuggestionAnchor = anchor;
         return;
@@ -311,47 +339,11 @@ export default defineContentScript({
       })
         .then((response: AutofillResponse | undefined) => {
           if (response?.status === "locked") {
+            // A locked vault without an exact-origin entry in the metadata index is not
+            // evidence that a credential exists. Stay silent instead of asking the user to
+            // authenticate merely to check the vault.
             promptUsernames = null;
-            prompt(
-              "suggestions",
-              "Passwords",
-              new URL(location.href).hostname,
-              [
-                ...(response.deviceSlots.length > 0
-                  ? [
-                      {
-                        detail: "Check this exact site without leaving Passwords unlocked",
-                        icon: "◎",
-                        label: "Check Vault with Touch ID",
-                        run: () => {
-                          closePrompt();
-                          void sendMessage({
-                            topUrl: location.href,
-                            type: BIOMETRIC_AUTOFILL_REQUEST_TYPE,
-                            userInitiated: true,
-                            version: 1,
-                          });
-                        },
-                      },
-                    ]
-                  : []),
-                {
-                  detail: "Check this exact site after unlocking",
-                  icon: "●",
-                  label: "Check Vault with Master Password",
-                  run: () => {
-                    closePrompt();
-                    void sendMessage({
-                      topUrl: location.href,
-                      type: MANUAL_AUTOFILL_REQUEST_TYPE,
-                      userInitiated: true,
-                      version: 1,
-                    });
-                  },
-                },
-              ],
-              anchor,
-            );
+            closePrompt();
             return;
           }
           if (response?.status !== "suggestions") return;
@@ -368,7 +360,7 @@ export default defineContentScript({
             });
           };
           const options = response.credentials.map((credential) => ({
-            detail: response.deviceSlots.length > 0 ? "Touch ID required" : "Vault unlock required",
+            detail: "Verify and fill",
             icon: response.deviceSlots.length > 0 ? "◎" : "●",
             label: credential.username || "Saved login",
             run: () => authenticateAndFill(credential.id),
@@ -385,10 +377,170 @@ export default defineContentScript({
         });
     };
 
+    const requestStrongPassword = (anchor: HTMLInputElement) => {
+      const key = anchor.form ?? anchor;
+      const policy = registrationPasswordPolicy(anchor);
+      const generatedFor = (style: RegistrationPasswordStyle, regenerate = false): string => {
+        const values = generatedPasswords.get(key) ?? new Map<RegistrationPasswordStyle, string>();
+        generatedPasswords.set(key, values);
+        const existing = values.get(style);
+        if (!regenerate && existing !== undefined) return existing;
+        const value = generateAdaptiveRegistrationPassword(anchor, undefined, style);
+        values.set(style, value);
+        return value;
+      };
+      const fillGenerated = (style: RegistrationPasswordStyle, regenerate = false) => {
+        const password = generatedFor(style, regenerate);
+        if (fillRegistrationPasswordFields(document, password, anchor)) closePrompt();
+      };
+      const showOtherOptions = () => {
+        const options = [
+          {
+            detail: "Create another unique password",
+            icon: "↻",
+            label: "New Strong Password",
+            run: () => fillGenerated("strong", true),
+          },
+          ...(policy.supportsNoSpecialCharacters
+            ? [
+                {
+                  detail: "Letters and numbers only",
+                  icon: "Aa",
+                  label: "No Special Characters",
+                  run: () => fillGenerated("no-special"),
+                },
+              ]
+            : []),
+          {
+            detail: "Avoids look-alike characters",
+            icon: "⌨",
+            label: "Easy to Type",
+            run: () => fillGenerated("easy-to-type"),
+          },
+          {
+            detail: "Keep the field ready for typing",
+            icon: "…",
+            label: "Choose My Own Password",
+            run: () => {
+              closePrompt();
+              anchor.focus({ preventScroll: true });
+            },
+          },
+        ] as const;
+        prompt(
+          "suggestions",
+          "Other Password Options",
+          new URL(location.href).hostname,
+          options,
+          anchor,
+        );
+      };
+      prompt(
+        "suggestions",
+        "Strong Password",
+        new URL(location.href).hostname,
+        [
+          {
+            detail: policy.label,
+            icon: "✦",
+            label: "Use Strong Password",
+            run: () => fillGenerated("strong"),
+          },
+          {
+            detail: "Generate another or change the style",
+            icon: "•••",
+            label: "Other Options",
+            run: showOtherOptions,
+          },
+        ],
+        anchor,
+      );
+    };
+
+    const requestProfileSuggestions = (anchor: HTMLInputElement) => {
+      const field = profileFieldKind(anchor);
+      if (field === null) return;
+      void sendMessage<ProfileAutofillResponse>({
+        field,
+        topUrl: location.href,
+        type: PROFILE_AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }).then((response) => {
+        if (response?.status !== "suggestions") return;
+        prompt(
+          "suggestions",
+          "Contact AutoFill",
+          new URL(location.href).hostname,
+          response.profiles.map((profile) => ({
+            detail: "Fill this field",
+            icon: "⌁",
+            label: profile.label,
+            run: () => {
+              closePrompt();
+              void sendMessage<ProfileAutofillResponse>({
+                field,
+                profileId: profile.id,
+                topUrl: location.href,
+                type: PROFILE_AUTOFILL_SELECT_TYPE,
+                userInitiated: true,
+                version: 1,
+              }).then((selection) => {
+                if (selection?.status === "value") fillProfileField(anchor, selection.value);
+              });
+            },
+          })),
+          anchor,
+        );
+      });
+    };
+
+    const requestCardSuggestions = (anchor: HTMLInputElement) => {
+      const field = cardFieldKind(anchor);
+      if (field === null) return;
+      void sendMessage<CardAutofillResponse>({
+        field,
+        topUrl: location.href,
+        type: CARD_AUTOFILL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }).then((response) => {
+        if (response?.status !== "suggestions") return;
+        prompt(
+          "suggestions",
+          "Payment AutoFill",
+          new URL(location.href).hostname,
+          response.cards.map((card) => ({
+            detail: "Fill this field",
+            icon: "◫",
+            label: card.label,
+            run: () => {
+              closePrompt();
+              void sendMessage<CardAutofillResponse>({
+                cardId: card.id,
+                field,
+                topUrl: location.href,
+                type: CARD_AUTOFILL_SELECT_TYPE,
+                userInitiated: true,
+                version: 1,
+              }).then((selection) => {
+                if (selection?.status === "value") fillCardField(anchor, selection.value);
+              });
+            },
+          })),
+          anchor,
+        );
+      });
+    };
+
     const offerCapture = (anchor: Element | null) => {
       if (!extensionContextActive) return;
-      const captured = captureLoginFields(document);
+      const captured = captureLoginFields(document, anchor);
       if (captured === null) return;
+      if (lastFilledCredential !== null && credentialsMatch(captured, lastFilledCredential)) {
+        closePrompt();
+        return;
+      }
       void sendMessage<CaptureResponse>({
         ...captured,
         topUrl: location.href,
@@ -396,16 +548,39 @@ export default defineContentScript({
         userInitiated: true,
         version: 1,
       }).then((response: CaptureResponse | undefined) => {
+        if (response?.status === "locked") {
+          prompt(
+            "capture",
+            "Save password?",
+            response.displayHost ?? new URL(location.href).hostname,
+            [
+              {
+                detail: "Unlock to save",
+                icon: "◎",
+                label: "Continue",
+                run: () => {
+                  closePrompt();
+                  void sendMessage({
+                    type: OPEN_VAULT_MANAGER_TYPE,
+                    userInitiated: true,
+                    version: 1,
+                  });
+                },
+              },
+            ],
+            anchor,
+          );
+          return;
+        }
         if (response?.status !== "offer") return;
         prompt(
           "capture",
-          response.action === "save" ? "Save This Password?" : "Update This Password?",
+          response.action === "save" ? "Save password?" : "Update password?",
           response.displayHost,
           [
             {
-              detail: "Encrypted in your vault",
               icon: "✓",
-              label: response.action === "save" ? "Save Password" : "Update Password",
+              label: response.action === "save" ? "Save" : "Update",
               run: () => {
                 closePrompt();
                 void sendMessage({
@@ -437,13 +612,12 @@ export default defineContentScript({
           if (response?.status !== "offer") return;
           prompt(
             "capture",
-            response.action === "save" ? "Save This Password?" : "Update This Password?",
+            response.action === "save" ? "Save password?" : "Update password?",
             response.displayHost,
             [
               {
-                detail: "Encrypted in your vault",
                 icon: "✓",
-                label: response.action === "save" ? "Save Password" : "Update Password",
+                label: response.action === "save" ? "Save" : "Update",
                 run: () => {
                   closePrompt();
                   void sendMessage({
@@ -489,6 +663,7 @@ export default defineContentScript({
           return;
         }
         if (shouldDismissSuggestionsForUsername(event.target.value, promptUsernames)) {
+          suppressedUsernameInputs.add(event.target);
           closePrompt();
         }
       },
@@ -498,7 +673,28 @@ export default defineContentScript({
       "focusin",
       (event) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (event.isTrusted && window.top === window && isCredentialField(target)) {
+        if (
+          event.isTrusted &&
+          window.top === window &&
+          target instanceof HTMLInputElement &&
+          isRegistrationPasswordField(target)
+        ) {
+          requestStrongPassword(target);
+        } else if (
+          event.isTrusted &&
+          window.top === window &&
+          target instanceof HTMLInputElement &&
+          cardFieldKind(target) !== null
+        ) {
+          requestCardSuggestions(target);
+        } else if (
+          event.isTrusted &&
+          window.top === window &&
+          target instanceof HTMLInputElement &&
+          profileFieldKind(target) !== null
+        ) {
+          requestProfileSuggestions(target);
+        } else if (event.isTrusted && window.top === window && isCredentialField(target)) {
           requestSuggestions(target);
         }
       },
@@ -509,6 +705,7 @@ export default defineContentScript({
       (event) => {
         if (!event.isTrusted || !(event.target instanceof HTMLInputElement)) return;
         rememberUsername(event.target);
+        suppressedUsernameInputs.delete(event.target);
       },
       true,
     );
@@ -525,7 +722,21 @@ export default defineContentScript({
       "pointerdown",
       (event) => {
         if (!event.isTrusted || !(event.target instanceof Element)) return;
-        if (isCredentialField(event.target)) requestSuggestions(event.target);
+        if (isRegistrationPasswordField(event.target)) {
+          requestStrongPassword(event.target);
+        } else if (
+          event.target instanceof HTMLInputElement &&
+          cardFieldKind(event.target) !== null
+        ) {
+          requestCardSuggestions(event.target);
+        } else if (
+          event.target instanceof HTMLInputElement &&
+          profileFieldKind(event.target) !== null
+        ) {
+          requestProfileSuggestions(event.target);
+        } else if (isCredentialField(event.target)) {
+          requestSuggestions(event.target);
+        }
         if (!isLoginAction(event.target)) return;
         const active = document.activeElement;
         if (active instanceof HTMLInputElement) rememberUsername(active);
@@ -551,7 +762,53 @@ export default defineContentScript({
       },
       true,
     );
+    window.addEventListener("pagehide", () => offerCapture(document.activeElement));
     const fillListener = (message: unknown, sender: Browser.runtime.MessageSender) => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "unlocked" &&
+        "version" in message &&
+        message.version === 1 &&
+        sender.id === extensionId &&
+        sender.tab === undefined
+      ) {
+        showPendingCapture();
+        return;
+      }
+      const showRequest = parseShowAutofillRequest(message);
+      if (
+        showRequest !== null &&
+        showRequest.type === SHOW_AUTOFILL_TYPE &&
+        sender.id === extensionId &&
+        sender.tab === undefined &&
+        window.top === window
+      ) {
+        const active = document.activeElement;
+        const anchor = isCredentialField(active)
+          ? active
+          : ([...document.querySelectorAll<HTMLInputElement>("input")].find((input) => {
+              return (
+                isRegistrationPasswordField(input) ||
+                cardFieldKind(input) !== null ||
+                profileFieldKind(input) !== null ||
+                isCredentialField(input)
+              );
+            }) ?? null);
+        if (anchor === null) return Promise.resolve({ shown: false });
+        anchor.focus({ preventScroll: true });
+        if (isRegistrationPasswordField(anchor)) {
+          requestStrongPassword(anchor);
+        } else if (cardFieldKind(anchor) !== null) {
+          requestCardSuggestions(anchor);
+        } else if (profileFieldKind(anchor) !== null) {
+          requestProfileSuggestions(anchor);
+        } else {
+          requestSuggestions(anchor);
+        }
+        return Promise.resolve({ shown: true });
+      }
       const request = parseBiometricFillRequest(message);
       if (
         request === null ||
@@ -562,6 +819,19 @@ export default defineContentScript({
         return;
       }
       const filled = fillLoginFields(document, request);
+      if (filled) {
+        lastFilledCredential = {
+          password: request.password,
+          username: request.username,
+        };
+        void sendMessage({
+          password: request.password,
+          topUrl: request.topUrl,
+          type: AUTOFILL_FILLED_TYPE,
+          username: request.username,
+          version: 1,
+        });
+      }
       const submitted = filled && request.submit ? submitLoginForm(document) : false;
       closePrompt();
       return Promise.resolve({ filled, submitted });
@@ -580,9 +850,21 @@ export default defineContentScript({
       if (
         extensionContextActive &&
         window.top === window &&
-        isCredentialField(document.activeElement)
+        document.activeElement instanceof HTMLInputElement &&
+        (isCredentialField(document.activeElement) ||
+          cardFieldKind(document.activeElement) !== null ||
+          profileFieldKind(document.activeElement) !== null)
       ) {
-        requestSuggestions(document.activeElement);
+        const active = document.activeElement;
+        if (isRegistrationPasswordField(active)) {
+          requestStrongPassword(active);
+        } else if (cardFieldKind(active) !== null) {
+          requestCardSuggestions(active);
+        } else if (profileFieldKind(active) !== null) {
+          requestProfileSuggestions(active);
+        } else {
+          requestSuggestions(active);
+        }
       }
     };
     const queueActiveFieldCheck = () => {

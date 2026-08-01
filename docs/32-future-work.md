@@ -15,11 +15,16 @@ Only one or two should be selected for a portfolio extension.
 
 ### Additional password-manager data
 
-- Cards, identities, addresses, attachments, custom fields, payment/address fill, broader importer catalog, plaintext export, continuous breach monitoring, and paid HIBP-key support.
+- Attachments, custom fields, protected payment-field AutoFill, broader importer catalog, plaintext
+  export, continuous scheduled breach monitoring, and paid HIBP-key support. Encrypted cards,
+  identities, addresses, and automatic-on-save k-anonymous breach checks shipped in extension
+  0.10.0.
 
 ### Software passkeys
 
-- Synced passkey credentials, RP/origin/challenge validation, signature counters, MAIN-world bridge, and native fallback.
+- Native credential-provider targets, synced passkey credentials, RP/origin/challenge validation,
+  signature counters, secure native key storage, browser/platform registration, and native
+  fallback. See [`36-enterprise-password-manager-status.md`](36-enterprise-password-manager-status.md).
 
 ### Document intelligence
 
