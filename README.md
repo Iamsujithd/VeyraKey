@@ -1,6 +1,12 @@
+# VeyraKey — Zero-Knowledge Password Manager
+
+> **End-to-end encrypted, browser-first password manager** — vault keys, master passwords, Recovery Kits, and OAuth tokens never leave your device. Google Drive and OneDrive store only authenticated ciphertext they cannot decrypt. Built with TypeScript, React, Argon2id, XChaCha20-Poly1305, WebAuthn PRF biometric unlock, and a Manifest V3 browser extension for Chrome and Firefox.
+
+⭐ **If this project is useful or impressive, please [star it](https://github.com/Iamsujithd/VeyraKey) — it helps others discover it!**
+
 <div align="center">
 
-<img src="docs/assets/veyrakey_hero_banner.jpg" alt="VeyraKey – Zero-Knowledge Password Manager" width="100%" />
+<img src="docs/assets/veyrakey_hero_banner.jpg" alt="VeyraKey – Zero-Knowledge Password Manager built with TypeScript, React, Argon2id, and WebAuthn" width="100%" />
 
 <br/><br/>
 
@@ -12,15 +18,7 @@
 [![License](https://img.shields.io/badge/license-MIT-8b5cf6?style=for-the-badge)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-ea580c?style=for-the-badge&logo=googlechrome&logoColor=white)](apps/extension)
 
-<br/>
-
-> **A browser-first, zero-knowledge password manager built as an industry-grade portfolio project.**
-> Vault keys, master passwords, Recovery Kits, and OAuth tokens never leave your client.
-> Google Drive and OneDrive receive only authenticated ciphertext — your cloud stores secrets it cannot read.
-
-<br/>
-
-[🚀 Quick Start](#-quick-start) • [🏗 Architecture](#-system-architecture) • [🔐 Security Model](#-security-model) • [📦 Packages](#-monorepo-packages) • [🛠 Development](#-development) • [📚 Docs](#-documentation)
+[🚀 Quick Start](#-quick-start) · [🏗 Architecture](#-system-architecture) · [🔐 Security Model](#-security-model) · [📦 Packages](#-monorepo-packages) · [🛠 Development](#-development) · [📚 Docs](#-documentation)
 
 </div>
 
@@ -744,10 +742,30 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
+---
+
+## 🔎 Keywords & Discoverability
+
+<!-- SEO: zero knowledge password manager · end-to-end encrypted password vault · browser extension password manager · TypeScript password manager · WebAuthn PRF biometric unlock · Argon2id password hashing · XChaCha20-Poly1305 encryption · Google Drive password sync · Manifest V3 extension · open source password manager · self-hosted password manager · BYOS password manager · React password manager · Cloudflare Workers · pnpm monorepo · offline password manager · encrypted IndexedDB · HIBP k-anonymous breach check · TOTP authenticator · Bitwarden alternative open source -->
+
+VeyraKey is an **open-source, zero-knowledge password manager** built as a portfolio project demonstrating modern cryptographic engineering in TypeScript. Key search terms this project covers:
+
+- **Zero-knowledge password manager** — the server never possesses vault-decryption keys
+- **End-to-end encrypted vault** — Argon2id KDF + XChaCha20-Poly1305-IETF + HKDF-SHA-256
+- **WebAuthn PRF biometric unlock** — Touch ID / Face ID as a hardware key wrapper, not just 2FA
+- **BYOS (Bring Your Own Storage)** — Google Drive `appDataFolder` + Microsoft OneDrive
+- **MV3 Browser Extension** — Chromium + Firefox Manifest V3 with exact-origin autofill
+- **Self-hosted / open source Bitwarden alternative** — full local vault, no proprietary cloud
+- **TypeScript monorepo** — strict pnpm workspace, Biome, Vitest, 146 tests
+
 <div align="center">
 
-Built with ❤️ using TypeScript, React, WebCrypto, and libsodium.
+⭐ **Star this repo** to help other developers find a real-world example of zero-knowledge cryptographic architecture in TypeScript.
 
-**VeyraKey v0.10.0** · Your keys, your vault, your cloud.
+**[github.com/Iamsujithd/VeyraKey](https://github.com/Iamsujithd/VeyraKey)**
+
+Built with ❤️ using TypeScript · React · WebCrypto · libsodium · WebAuthn · Argon2id · XChaCha20
+
+**VeyraKey v0.10.0** — Your keys. Your vault. Your cloud.
 
 </div>
