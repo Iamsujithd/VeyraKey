@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 <img src="docs/assets/veyrakey_hero_banner.jpg" alt="VeyraKey – Zero-Knowledge Password Manager" width="100%" />
 
@@ -751,4 +751,3 @@ Built with ❤️ using TypeScript, React, WebCrypto, and libsodium.
 **VeyraKey v0.10.0** · Your keys, your vault, your cloud.
 
 </div>
-]]>
