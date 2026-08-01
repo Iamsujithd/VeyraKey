@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and format check
+        run: pnpm lint
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build all targets
+        run: pnpm build
+
+      - name: Package browser release archives
+        run: pnpm release:package
+
+      - name: Verify production artifacts and SBOM
+        run: pnpm verify:artifacts
+
+      - name: Generate checksummed release manifest
+        run: pnpm release:manifest
+
+      - name: Preserve release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyrakey-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            release/release-manifest.json
+            release/external-gates.json
+            release/sbom.cdx.json
+            apps/extension/.output/veyrakey-extension-0.10.0-chrome.zip
+            apps/extension/.output/veyrakey-extension-0.10.0-firefox.zip
+            apps/extension/.output/veyrakey-extension-0.10.0-sources.zip
