@@ -76,7 +76,7 @@ describe("VaultScreen Task 3 flows", () => {
   it("blocks normal use on a one-time Recovery Kit display until the explicit drill succeeds", async () => {
     const { client, mocks } = task3Client({ status: "needs-setup" });
     render(<VaultScreen client={client} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Create your local vault" });
+    await screen.findByRole("heading", { name: "Set up your vault" });
 
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "correct horse battery staple" },
@@ -150,7 +150,7 @@ describe("VaultScreen Task 3 flows", () => {
     );
     render(<VaultScreen client={client} surface="Browser extension" />);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
 
     expect(screen.getByText(/document compartment is sealed/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Unlock document compartment" }));
@@ -253,7 +253,7 @@ describe("VaultScreen Task 3 flows", () => {
     const { client, emit } = task3Client(unlockedState);
     render(<VaultScreen client={client} surface="Web application" />);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
 
     fireEvent.change(screen.getByLabelText("Master password for device enrollment"), {
       target: { value: "enrollment secret" },
@@ -280,7 +280,7 @@ describe("VaultScreen Task 3 flows", () => {
     await screen.findByRole("heading", { name: "Replace your Recovery Kit" });
     emit(unlockedState);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
     expect(screen.getByLabelText("Master password for device enrollment")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Master password for device enrollment"), {
       target: { value: "second enrollment secret" },
@@ -294,7 +294,7 @@ describe("VaultScreen Task 3 flows", () => {
     await screen.findByRole("heading", { name: "Unlock" });
     emit(unlockedState);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
 
     expect(screen.getByLabelText("Master password for device enrollment")).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: "Unlock document compartment" }));
@@ -306,7 +306,7 @@ describe("VaultScreen Task 3 flows", () => {
     mocks.enrollDevice.mockRejectedValueOnce(new Error("enrollment failed"));
     render(<VaultScreen client={client} surface="Web application" />);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
 
     const enrollmentPassword = screen.getByLabelText("Master password for device enrollment");
     fireEvent.change(enrollmentPassword, { target: { value: "temporary secret" } });
@@ -323,7 +323,7 @@ describe("VaultScreen Task 3 flows", () => {
     const { client, mocks } = task3Client(state);
     render(<VaultScreen client={client} surface="Web application" />);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vault Security" }));
 
     fireEvent.change(screen.getByLabelText("Current master password"), {
       target: { value: "old password" },
@@ -342,10 +342,9 @@ describe("VaultScreen Task 3 flows", () => {
       }),
     );
 
-    expect(
-      screen.getByText(/revocation prevents future use after updated state is available/i),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Revoke enrolled device" }));
+    expect(screen.getByText(/Active · available for local vault unlock/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Set up Touch ID" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(mocks.revokeDevice).toHaveBeenCalledWith("device-slot-1"));
   });
 });

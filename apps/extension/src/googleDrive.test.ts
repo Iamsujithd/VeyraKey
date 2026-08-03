@@ -15,6 +15,19 @@ describe("extension Google Drive OAuth boundary", () => {
       "https://extension-id.chromiumapp.org/oauth/google",
     );
     expect(url.searchParams.get("state")).toBe("expected-state");
+    expect(url.searchParams.has("prompt")).toBe(false);
+  });
+
+  it("forces account selection only when the user switches Google accounts", () => {
+    const url = new URL(
+      buildExtensionGoogleOAuthUrl({
+        clientId: "fixture.apps.googleusercontent.com",
+        redirectUri: "https://extension-id.chromiumapp.org/oauth/google",
+        selectAccount: true,
+        state: "expected-state",
+      }),
+    );
+    expect(url.searchParams.get("prompt")).toBe("select_account");
   });
 
   it("strictly validates the returned state and bearer token", () => {

@@ -379,6 +379,48 @@ select {
   margin: 0;
 }
 
+.cloud-account-panel,
+.cloud-account-panel p {
+  display: grid;
+  gap: 4px;
+}
+
+.cloud-account-panel p {
+  margin: 0;
+}
+
+.cloud-account-panel p span {
+  color: #aeb7cd;
+  font-size: 0.9rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button-row > button {
+  width: auto;
+  flex: 1 1 220px;
+}
+
+.passkey-summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 14px;
+  color: #dde2f5;
+  background: rgb(118 118 128 / 8%);
+}
+
+.passkey-summary span {
+  color: #aeb7cd;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .cloud-card-heading p {
   margin-top: 0.2rem;
   color: #aeb7cd;
@@ -2207,4 +2249,92 @@ body {
   .security-recommendations {
     min-height: 0;
   }
+}
+.settings-view-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.settings-view-heading h2,
+.settings-view-heading p {
+  margin: 0;
+}
+
+.settings-view-heading > div > p:last-child {
+  color: #aeb7ce;
+  line-height: 1.5;
+  margin-top: 6px;
+  max-width: 720px;
+}
+
+.authenticator-list {
+  display: grid;
+  gap: 12px;
+}
+
+.authenticator-row,
+.authenticator-empty {
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.authenticator-empty,
+.authenticator-row-heading,
+.authenticator-detail {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.authenticator-row-heading {
+  margin-bottom: 10px;
+}
+
+.authenticator-row-heading div,
+.authenticator-detail div {
+  display: grid;
+  gap: 3px;
+}
+
+.authenticator-row-heading span,
+.authenticator-detail span,
+.authenticator-empty p,
+.authenticator-provider {
+  color: #aeb7ce;
+  margin: 0;
+}
+
+.authenticator-detail {
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  min-height: 52px;
+  padding-top: 10px;
+}
+
+.authenticator-provider {
+  font-size: 0.88rem;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .settings-view-heading,
+  .authenticator-row-heading,
+  .authenticator-detail {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .authenticator-provider {
+    text-align: left;
+  }
+}
+
+/* Keep inactive React views out of layout even when a component defines display later. */
+.vault-shell [hidden] {
+  display: none;
 }

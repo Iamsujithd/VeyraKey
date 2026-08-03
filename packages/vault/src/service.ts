@@ -2160,6 +2160,89 @@ export function createVaultService(options: CreateVaultServiceOptions): VaultCli
       });
     },
 
+    async restoreEncryptedArchiveWithMasterPassword(request) {
+      return exclusive(async () => {
+        const operationGeneration = sessionGeneration;
+        if ((await repository.read()) !== null) {
+          throw new VaultError("VAULT_ALREADY_EXISTS", "A local vault already exists");
+        }
+        if (repository.restoreArchive === undefined || itemRepository === undefined) {
+          throw new VaultError("INVALID_VAULT_HEADER", "Encrypted archive restore is unavailable");
+        }
+        const outer =
+          typeof request.archive === "object" &&
+          request.archive !== null &&
+          !Array.isArray(request.archive)
+            ? (request.archive as Record<string, unknown>)
+            : {};
+        let source: VaultHeader;
+        try {
+          source = parseVaultHeader(outer.header);
+        } catch {
+          throw invalidUnlock();
+        }
+        if (source.version !== 2) {
+          throw new VaultError("UNSUPPORTED_VAULT_VERSION", "Restore requires a V2 vault");
+        }
+        let passwordBase: Uint8Array | null = null;
+        let keys: KeySetBytes | null = null;
+        const vaultIdBytes = base64UrlToBytes(source.vaultId);
+        try {
+          let payload: Task3VaultPayloadV2;
+          try {
+            passwordBase = await derivePersistedPasswordBase(
+              request.masterPassword,
+              source.masterPasswordSlot,
+            );
+            keys = await openAllWrappedKeys(
+              passwordBase,
+              "master-password",
+              source.masterPasswordSlot.wrappedKeys,
+              source.vaultId,
+              vaultIdBytes,
+              source.masterPasswordSlot.id,
+            );
+            if (!(await verifyHeaderSecurityTag(source, keys.root))) throw invalidUnlock();
+            payload = await openPayloadV2(source, keys.root);
+          } catch (error) {
+            if (isCryptoUnavailable(error)) throw error;
+            throw invalidUnlock();
+          }
+          const opened = await openEncryptedVaultArchive(crypto, keys.root, request.archive).catch(
+            () => {
+              throw invalidUnlock();
+            },
+          );
+          for (const revision of opened.contents.revisions) {
+            await openEncryptedItemRevision(crypto, keys.root, source.vaultId, revision).catch(
+              () => {
+                throw invalidUnlock();
+              },
+            );
+          }
+          await repository.restoreArchive(
+            source,
+            opened.contents.revisions,
+            opened.contents.headRevisionIds,
+          );
+          await refreshCapability();
+          const sessionRoot = keys.root;
+          keys.root = new Uint8Array(0);
+          return installRootSession(
+            sessionRoot,
+            source,
+            payload.recoveryKitVerified,
+            undefined,
+            operationGeneration,
+          );
+        } finally {
+          if (passwordBase !== null) zeroBytes(passwordBase);
+          wipeKeySet(keys);
+          zeroBytes(vaultIdBytes);
+        }
+      });
+    },
+
     async revokeDevice(slotId) {
       return exclusive(async () => {
         const operationGeneration = sessionGeneration;

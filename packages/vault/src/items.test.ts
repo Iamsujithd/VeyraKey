@@ -112,10 +112,26 @@ describe("Task 4 item schemas and encryption", () => {
 
   it("round-trips a login without storing plaintext or raw item keys", async () => {
     const input = {
+      emailAlias: {
+        address: "private+veyrakey-example@sentinel.invalid",
+        createdAt: "2026-07-25T00:00:00.000Z",
+        createdForOrigin: "https://sentinel.invalid",
+        provider: "plus" as const,
+        sourceEmail: "private@sentinel.invalid",
+      },
       favorite: true,
       folder: "sentinel-folder",
       notes: "sentinel-notes",
       password: "sentinel-password",
+      passkeys: [
+        {
+          createdAt: "2026-07-25T00:00:00.000Z",
+          displayName: "MacBook Touch ID",
+          provider: "platform" as const,
+          rpId: "sentinel.invalid",
+          userName: "sentinel-user",
+        },
+      ],
       tags: ["sentinel-tag"],
       title: "sentinel-title",
       totpUri: "otpauth://totp/Sentinel?secret=JBSWY3DPEHPK3PXP&issuer=Sentinel",
@@ -136,6 +152,42 @@ describe("Task 4 item schemas and encryption", () => {
     await expect(
       openEncryptedItemRevision(crypto, rootKey, vaultId, revision),
     ).resolves.toMatchObject({ ...input, type: "login" });
+  });
+
+  it("rejects secret-looking or malformed passkey and alias metadata", () => {
+    const base = {
+      notes: "",
+      password: "password",
+      title: "Example",
+      uris: ["https://example.test"],
+      username: "person",
+    };
+    expect(() =>
+      parseLoginInput({
+        ...base,
+        passkeys: [
+          {
+            createdAt: new Date().toISOString(),
+            displayName: "Laptop",
+            privateKey: "must-never-be-stored",
+            provider: "platform",
+            rpId: "example.test",
+            userName: "person",
+          },
+        ],
+      }),
+    ).toThrow(ItemError);
+    expect(() =>
+      parseLoginInput({
+        ...base,
+        emailAlias: {
+          address: "alias@example.test",
+          createdAt: new Date().toISOString(),
+          createdForOrigin: "https://example.test",
+          provider: "unknown",
+        },
+      }),
+    ).toThrow(ItemError);
   });
 
   it("binds vault, revision ancestry, operation, wrapper, and ciphertext", async () => {

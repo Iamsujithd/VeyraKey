@@ -256,6 +256,10 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultPublicState>;
+  restoreEncryptedArchiveWithMasterPassword?(request: {
+    readonly archive: unknown;
+    readonly masterPassword: string;
+  }): Promise<VaultPublicState>;
   restoreItemRevision?(
     itemId: string,
     historicalRevisionId: string,

@@ -93,4 +93,57 @@ describe("atomic encrypted archive recovery", () => {
     ).rejects.toBeDefined();
     await expect(new IndexedDbVaultHeaderRepository({ databaseName }).read()).resolves.toBeNull();
   });
+
+  it("opens the same encrypted archive on a clean device with the existing master password", async () => {
+    const source = service(`archive-password-source-${crypto.randomUUID()}`);
+    const created = await source.createVault("existing master password");
+    if (created.status !== "unlocked" || created.recovery.status !== "pending") {
+      throw new Error("Expected Recovery Kit");
+    }
+    await source.verifyRecoveryKit(created.recovery.recoveryKit);
+    await source.createLogin({
+      notes: "",
+      password: "device-two-secret",
+      title: "Multi-device Example",
+      uris: ["https://multi-device.example.test"],
+      username: "person@example.test",
+    });
+    const archive = await source.exportEncryptedArchive?.();
+    if (archive === undefined) throw new Error("Expected archive export");
+
+    const restored = service(`archive-password-target-${crypto.randomUUID()}`);
+    await expect(
+      restored.restoreEncryptedArchiveWithMasterPassword?.({
+        archive,
+        masterPassword: "existing master password",
+      }),
+    ).resolves.toMatchObject({ status: "unlocked" });
+    await expect(restored.listItems()).resolves.toEqual([
+      expect.objectContaining({
+        password: "device-two-secret",
+        title: "Multi-device Example",
+      }),
+    ]);
+    restored.lock();
+    await expect(restored.unlock("existing master password")).resolves.toMatchObject({
+      status: "unlocked",
+    });
+  });
+
+  it("does not create a local vault when the existing master password is wrong", async () => {
+    const source = service(`archive-wrong-password-source-${crypto.randomUUID()}`);
+    await source.createVault("correct existing password");
+    const archive = await source.exportEncryptedArchive?.();
+    if (archive === undefined) throw new Error("Expected archive export");
+    const databaseName = `archive-wrong-password-target-${crypto.randomUUID()}`;
+    const target = service(databaseName);
+
+    await expect(
+      target.restoreEncryptedArchiveWithMasterPassword?.({
+        archive,
+        masterPassword: "wrong password",
+      }),
+    ).rejects.toBeDefined();
+    await expect(new IndexedDbVaultHeaderRepository({ databaseName }).read()).resolves.toBeNull();
+  });
 });

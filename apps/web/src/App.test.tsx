@@ -31,9 +31,7 @@ describe("web app", () => {
   it("wires the shared vault flow to the web surface", async () => {
     render(<App client={client()} />);
 
-    expect(
-      await screen.findByRole("heading", { name: "Create your local vault" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up your vault" })).toBeInTheDocument();
     expect(screen.getByText("Web application")).toBeInTheDocument();
   });
 });

@@ -168,6 +168,7 @@ export class ExtensionSessionCoordinator {
 const SESSION_CREATING_METHODS = new Set<keyof VaultClient>([
   "createVault",
   "restoreVault",
+  "restoreEncryptedArchiveWithMasterPassword",
   "unlock",
   "unlockWithDevice",
   "unlockWithRecoveryKit",
