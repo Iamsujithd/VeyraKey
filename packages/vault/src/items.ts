@@ -25,6 +25,31 @@ const MAX_TAG_BYTES = 256;
 const MAX_TAGS = 32;
 const MAX_PROFILE_FIELD_BYTES = 8_192;
 const MAX_CARD_FIELD_BYTES = 8_192;
+const MAX_PASSKEY_REFERENCES = 64;
+const MAX_PASSKEY_FIELD_BYTES = 2_048;
+
+export interface LoginEmailAlias {
+  readonly address: string;
+  readonly createdAt: string;
+  readonly createdForOrigin: string;
+  readonly provider: "addy" | "plus" | "simplelogin";
+  readonly providerAliasId?: string;
+  readonly sourceEmail?: string;
+}
+
+/**
+ * A reference to a passkey held by an authenticator. This deliberately never
+ * contains private-key material: WebAuthn authenticators do not expose it.
+ */
+export interface PasskeyReference {
+  readonly createdAt: string;
+  readonly credentialId?: string;
+  readonly discoverable?: boolean;
+  readonly displayName: string;
+  readonly provider: "external" | "platform" | "security-key";
+  readonly rpId: string;
+  readonly userName: string;
+}
 
 export interface OrganizationInput {
   readonly favorite?: boolean;
@@ -38,7 +63,9 @@ export type PasswordBreachCheck =
 
 export interface LoginItemInput extends OrganizationInput {
   readonly breachCheck?: PasswordBreachCheck;
+  readonly emailAlias?: LoginEmailAlias;
   readonly notes: string;
+  readonly passkeys?: readonly PasskeyReference[];
   readonly password: string;
   readonly title: string;
   readonly totpUri?: string;
@@ -232,7 +259,7 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     !allowedKeys(
       value as Record<string, unknown>,
       ["notes", "password", "title", "uris", "username"],
-      ["breachCheck", "favorite", "folder", "tags", "totpUri"],
+      ["breachCheck", "emailAlias", "favorite", "folder", "passkeys", "tags", "totpUri"],
     )
   ) {
     throw new ItemError("INVALID_ITEM", "Login data is invalid");
@@ -244,6 +271,8 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     !bounded(input.password, MAX_PASSWORD_BYTES) ||
     !bounded(input.notes, MAX_LOGIN_NOTES_BYTES) ||
     (input.breachCheck !== undefined && parsePasswordBreachCheck(input.breachCheck) === null) ||
+    (input.emailAlias !== undefined && parseLoginEmailAlias(input.emailAlias) === null) ||
+    (input.passkeys !== undefined && parsePasskeyReferences(input.passkeys) === null) ||
     (input.totpUri !== undefined && !bounded(input.totpUri, MAX_TOTP_URI_BYTES)) ||
     !Array.isArray(input.uris) ||
     input.uris.length > MAX_URIS ||
@@ -256,13 +285,85 @@ export function parseLoginInput(value: unknown): LoginItemInput {
     ...(input.breachCheck === undefined
       ? {}
       : { breachCheck: parsePasswordBreachCheck(input.breachCheck) as PasswordBreachCheck }),
+    ...(input.emailAlias === undefined
+      ? {}
+      : { emailAlias: parseLoginEmailAlias(input.emailAlias) as LoginEmailAlias }),
     notes: input.notes,
     password: input.password,
+    ...(input.passkeys === undefined
+      ? {}
+      : { passkeys: parsePasskeyReferences(input.passkeys) as readonly PasskeyReference[] }),
     title: input.title,
     ...(input.totpUri === undefined ? {} : { totpUri: input.totpUri }),
     uris: [...input.uris],
     username: input.username,
   };
+}
+
+function parseLoginEmailAlias(value: unknown): LoginEmailAlias | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const alias = value as Record<string, unknown>;
+  if (
+    !allowedKeys(
+      alias,
+      ["address", "createdAt", "createdForOrigin", "provider"],
+      ["providerAliasId", "sourceEmail"],
+    ) ||
+    !bounded(alias.address, MAX_USERNAME_BYTES, false) ||
+    !bounded(alias.createdAt, 64, false) ||
+    !bounded(alias.createdForOrigin, MAX_URI_BYTES, false) ||
+    !["addy", "plus", "simplelogin"].includes(String(alias.provider)) ||
+    (alias.providerAliasId !== undefined &&
+      !bounded(alias.providerAliasId, MAX_PASSKEY_FIELD_BYTES, false)) ||
+    (alias.sourceEmail !== undefined && !bounded(alias.sourceEmail, MAX_USERNAME_BYTES, false))
+  ) {
+    return null;
+  }
+  return {
+    address: alias.address,
+    createdAt: alias.createdAt,
+    createdForOrigin: alias.createdForOrigin,
+    provider: alias.provider as LoginEmailAlias["provider"],
+    ...(alias.providerAliasId === undefined ? {} : { providerAliasId: alias.providerAliasId }),
+    ...(alias.sourceEmail === undefined ? {} : { sourceEmail: alias.sourceEmail }),
+  };
+}
+
+function parsePasskeyReferences(value: unknown): readonly PasskeyReference[] | null {
+  if (!Array.isArray(value) || value.length > MAX_PASSKEY_REFERENCES) return null;
+  const parsed: PasskeyReference[] = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
+      return null;
+    const reference = candidate as Record<string, unknown>;
+    if (
+      !allowedKeys(
+        reference,
+        ["createdAt", "displayName", "provider", "rpId", "userName"],
+        ["credentialId", "discoverable"],
+      ) ||
+      !bounded(reference.createdAt, 64, false) ||
+      !bounded(reference.displayName, MAX_PASSKEY_FIELD_BYTES) ||
+      !bounded(reference.rpId, MAX_PASSKEY_FIELD_BYTES, false) ||
+      !bounded(reference.userName, MAX_USERNAME_BYTES) ||
+      !["external", "platform", "security-key"].includes(String(reference.provider)) ||
+      (reference.credentialId !== undefined &&
+        !bounded(reference.credentialId, MAX_PASSKEY_FIELD_BYTES, false)) ||
+      (reference.discoverable !== undefined && typeof reference.discoverable !== "boolean")
+    ) {
+      return null;
+    }
+    parsed.push({
+      createdAt: reference.createdAt,
+      displayName: reference.displayName,
+      provider: reference.provider as PasskeyReference["provider"],
+      rpId: reference.rpId,
+      userName: reference.userName,
+      ...(reference.credentialId === undefined ? {} : { credentialId: reference.credentialId }),
+      ...(reference.discoverable === undefined ? {} : { discoverable: reference.discoverable }),
+    });
+  }
+  return parsed;
 }
 
 function parsePasswordBreachCheck(value: unknown): PasswordBreachCheck | null {

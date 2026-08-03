@@ -24,9 +24,11 @@ import {
   generateStrongRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
   MANUAL_AUTOFILL_REQUEST_TYPE,
+  PRIVATE_EMAIL_REQUEST_TYPE,
   PROFILE_AUTOFILL_REQUEST_TYPE,
   PROFILE_AUTOFILL_SELECT_TYPE,
   parseAuthenticatedAutofillSelectRequest,
@@ -40,6 +42,7 @@ import {
   parseCardAutofillRequest,
   parseCardAutofillSelectRequest,
   parseManualAutofillRequest,
+  parsePrivateEmailRequest,
   parseProfileAutofillRequest,
   parseProfileAutofillSelectRequest,
   parseUsernameObservedRequest,
@@ -794,6 +797,49 @@ describe("extension automatic autofill", () => {
     expect(age === null ? null : profileFieldKind(age)).toBe("age");
   });
 
+  it("offers private email only with strong registration evidence", () => {
+    document.body.innerHTML = `
+      <form id="create-account">
+        <h2>Create account</h2>
+        <input id="signup-email" autocomplete="email" type="email">
+        <input type="password" autocomplete="new-password">
+        <button type="submit">Sign up</button>
+      </form>
+      <form id="newsletter">
+        <input id="newsletter-email" autocomplete="email" type="email">
+        <button type="submit">Subscribe</button>
+      </form>
+      <form id="login">
+        <input id="login-email" autocomplete="email" type="email">
+        <input type="password" autocomplete="current-password">
+        <button type="submit">Sign in</button>
+      </form>
+    `;
+    expect(isRegistrationEmailField(document.querySelector("#signup-email"))).toBe(true);
+    expect(isRegistrationEmailField(document.querySelector("#newsletter-email"))).toBe(false);
+    expect(isRegistrationEmailField(document.querySelector("#login-email"))).toBe(false);
+  });
+
+  it("supports passwordless multi-step signup but rejects ambiguous standalone email fields", () => {
+    document.body.innerHTML = `
+      <form id="registration-step-one" action="/accounts/register">
+        <h1>Join Acme</h1>
+        <input id="step-email" autocomplete="email" type="email">
+        <button type="submit">Continue</button>
+      </form>
+      <form id="profile">
+        <input id="plain-email" autocomplete="email" type="email">
+      </form>
+      <form id="recovery" action="/recover">
+        <input id="recovery-email" autocomplete="email" type="email">
+        <button type="submit">Recover account</button>
+      </form>
+    `;
+    expect(isRegistrationEmailField(document.querySelector("#step-email"))).toBe(true);
+    expect(isRegistrationEmailField(document.querySelector("#plain-email"))).toBe(false);
+    expect(isRegistrationEmailField(document.querySelector("#recovery-email"))).toBe(false);
+  });
+
   it("strictly validates profile lookup and selection messages", () => {
     const request = {
       field: "city",
@@ -814,6 +860,21 @@ describe("extension automatic autofill", () => {
     };
     expect(parseProfileAutofillSelectRequest(selection)).toEqual(selection);
     expect(parseProfileAutofillSelectRequest({ ...selection, extra: true })).toBeNull();
+  });
+
+  it("accepts only user-initiated HTTPS private-email requests", () => {
+    const request = {
+      topUrl: "https://signup.example.test/register",
+      type: PRIVATE_EMAIL_REQUEST_TYPE,
+      userInitiated: true,
+      version: 1,
+    };
+    expect(parsePrivateEmailRequest(request)).toEqual(request);
+    expect(
+      parsePrivateEmailRequest({ ...request, topUrl: "http://signup.example.test" }),
+    ).toBeNull();
+    expect(parsePrivateEmailRequest({ ...request, userInitiated: false })).toBeNull();
+    expect(parsePrivateEmailRequest({ ...request, extra: true })).toBeNull();
   });
 
   it("captures a completed login and rejects malformed capture messages", () => {

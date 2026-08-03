@@ -9,6 +9,7 @@ import {
   type IdentityProfileItem,
   type LoginItem,
   type PaymentCardItem,
+  type SecureNoteItem,
   type VaultItem,
 } from "@zk-wallet/vault";
 import {
@@ -21,6 +22,7 @@ import {
   type CaptureResponse,
   type CardAutofillResponse,
   credentialFingerprint,
+  type PrivateEmailResponse,
   type ProfileAutofillResponse,
   parseAuthenticatedAutofillSelectRequest,
   parseAutofillFilledRequest,
@@ -33,6 +35,7 @@ import {
   parseCardAutofillSelectRequest,
   parseManualAutofillRequest,
   parseOpenVaultManagerRequest,
+  parsePrivateEmailRequest,
   parseProfileAutofillRequest,
   parseProfileAutofillSelectRequest,
   parseUsernameObservedRequest,
@@ -40,6 +43,12 @@ import {
 } from "../src/autofill";
 import { readAutofillMetadataIndex, writeAutofillMetadataIndex } from "../src/autofillIndex";
 import { createExtensionDevicePrfProvider } from "../src/devicePrf";
+import {
+  type CreatedPrivateEmailAlias,
+  createPrivateEmailAlias,
+  PRIVATE_EMAIL_SETTINGS_TAG,
+  parsePrivateEmailSettingsNote,
+} from "../src/privateEmail";
 import { ExtensionSessionCoordinator } from "../src/session";
 
 export default defineBackground(() => {
@@ -88,6 +97,30 @@ export default defineBackground(() => {
   };
   const pendingKey = (tabId: number) => `zk-wallet.pending-capture.v1.${tabId}`;
   const recentFillKey = (tabId: number) => `zk-wallet.recent-fill.v1.${tabId}`;
+  const privateEmailKey = (tabId: number) => `zk-wallet.private-email.v1.${tabId}`;
+  type PendingPrivateEmail = CreatedPrivateEmailAlias & { readonly expiresAt: number };
+  const loadPendingPrivateEmail = async (
+    tabId: number,
+    topUrl: string,
+  ): Promise<PendingPrivateEmail | null> => {
+    const key = privateEmailKey(tabId);
+    const value = (await browser.storage.session.get(key))[key];
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const alias = value as Partial<PendingPrivateEmail>;
+    if (
+      typeof alias.address !== "string" ||
+      typeof alias.createdAt !== "string" ||
+      typeof alias.createdForOrigin !== "string" ||
+      typeof alias.expiresAt !== "number" ||
+      !["addy", "plus", "simplelogin"].includes(alias.provider ?? "") ||
+      alias.expiresAt <= Date.now() ||
+      alias.createdForOrigin !== new URL(topUrl).origin
+    ) {
+      await browser.storage.session.remove(key);
+      return null;
+    }
+    return alias as PendingPrivateEmail;
+  };
   type RecentFill = { readonly expiresAt: number; readonly fingerprint: string };
   const rememberRecentFill = async (
     tabId: number,
@@ -221,8 +254,26 @@ export default defineBackground(() => {
     }
     if (decision.action === "save") {
       if (service.createLogin === undefined) return { status: "unavailable", version: 1 };
+      const pendingAlias = await loadPendingPrivateEmail(tabId, pending.capture.topUrl);
       await service.createLogin({
         breachCheck: await breachCheckFor(pending.capture.password),
+        ...(pendingAlias !== null &&
+        pendingAlias.address.toLocaleLowerCase() === pending.username.trim().toLocaleLowerCase()
+          ? {
+              emailAlias: {
+                address: pendingAlias.address,
+                createdAt: pendingAlias.createdAt,
+                createdForOrigin: pendingAlias.createdForOrigin,
+                provider: pendingAlias.provider,
+                ...(pendingAlias.providerAliasId === undefined
+                  ? {}
+                  : { providerAliasId: pendingAlias.providerAliasId }),
+                ...(pendingAlias.sourceEmail === undefined
+                  ? {}
+                  : { sourceEmail: pendingAlias.sourceEmail }),
+              },
+            }
+          : {}),
         notes: "",
         password: pending.capture.password,
         title: decision.displayHost,
@@ -238,15 +289,19 @@ export default defineBackground(() => {
         ...(existing.favorite === undefined ? {} : { favorite: existing.favorite }),
         ...(existing.folder === undefined ? {} : { folder: existing.folder }),
         breachCheck: await breachCheckFor(pending.capture.password),
+        ...(existing.emailAlias === undefined ? {} : { emailAlias: existing.emailAlias }),
         notes: existing.notes,
         password: pending.capture.password,
+        ...(existing.passkeys === undefined ? {} : { passkeys: existing.passkeys }),
         ...(existing.tags === undefined ? {} : { tags: existing.tags }),
         title: existing.title,
+        ...(existing.totpUri === undefined ? {} : { totpUri: existing.totpUri }),
         uris: existing.uris,
         username: pending.username,
       });
     }
     await deletePending(tabId);
+    await browser.storage.session.remove(privateEmailKey(tabId));
     await browser.action.setPopup({ popup: "popup.html", tabId });
     await unlockedLogins();
     return { action: decision.action, status: "saved", version: 1 };
@@ -329,6 +384,7 @@ export default defineBackground(() => {
       | AutofillResponse
       | CardAutofillResponse
       | CaptureResponse
+      | PrivateEmailResponse
       | ProfileAutofillResponse
       | undefined
     > => {
@@ -356,6 +412,49 @@ export default defineBackground(() => {
         if (!trustedOrigin(filledReceipt.topUrl, sender) || sender.tab?.id === undefined) return;
         await rememberRecentFill(sender.tab.id, filledReceipt);
         return;
+      }
+      const privateEmailRequest = parsePrivateEmailRequest(message);
+      if (privateEmailRequest !== null) {
+        if (!trustedOrigin(privateEmailRequest.topUrl, sender) || sender.tab?.id === undefined) {
+          return { status: "unavailable", version: 1 };
+        }
+        const cached = await loadPendingPrivateEmail(sender.tab.id, privateEmailRequest.topUrl);
+        if (cached !== null) {
+          return {
+            address: cached.address,
+            provider: cached.provider,
+            status: "value",
+            version: 1,
+          };
+        }
+        const items = await unlockedItems();
+        if (items === null) return { status: "locked", version: 1 };
+        const settingsNote = items.find(
+          (item): item is SecureNoteItem =>
+            item.type === "secure-note" && item.tags?.includes(PRIVATE_EMAIL_SETTINGS_TAG) === true,
+        );
+        if (settingsNote === undefined) return { status: "not-configured", version: 1 };
+        const settings = parsePrivateEmailSettingsNote(settingsNote.note);
+        if (settings === null) return { status: "not-configured", version: 1 };
+        if (!settings.autoFill) return { status: "disabled", version: 1 };
+        try {
+          const alias = await createPrivateEmailAlias(settings, privateEmailRequest.topUrl, {
+            randomBytes(length) {
+              const output = new Uint8Array(length);
+              crypto.getRandomValues(output);
+              return output;
+            },
+          });
+          await browser.storage.session.set({
+            [privateEmailKey(sender.tab.id)]: {
+              ...alias,
+              expiresAt: Date.now() + 30 * 60 * 1_000,
+            } satisfies PendingPrivateEmail,
+          });
+          return { address: alias.address, provider: alias.provider, status: "value", version: 1 };
+        } catch {
+          return { status: "unavailable", version: 1 };
+        }
       }
       const profileSelection = parseProfileAutofillSelectRequest(message);
       if (profileSelection !== null) {

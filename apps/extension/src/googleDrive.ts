@@ -16,6 +16,7 @@ import type { VaultClient, VaultSyncResult } from "@zk-wallet/ui";
 import type { VaultClient as CoreVaultClient } from "@zk-wallet/vault";
 
 const DEVICE_ID_KEY = "zk-wallet-extension-device-id-v1";
+const DRIVE_CONNECTED_KEY = "veyrakey-google-drive-connected-v1";
 const DRIVE_NAMESPACE_BYTES = 16;
 const MAX_TOKEN_LENGTH = 8_192;
 
@@ -27,6 +28,7 @@ interface OAuthToken {
 export function buildExtensionGoogleOAuthUrl(options: {
   readonly clientId: string;
   readonly redirectUri: string;
+  readonly selectAccount?: boolean;
   readonly state: string;
 }): string {
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -38,6 +40,7 @@ export function buildExtensionGoogleOAuthUrl(options: {
     scope: GOOGLE_DRIVE_APPDATA_SCOPE,
     state: options.state,
   }).toString();
+  if (options.selectAccount) url.searchParams.set("prompt", "select_account");
   return url.href;
 }
 
@@ -73,6 +76,7 @@ class ExtensionGoogleTokenProvider implements DriveAccessTokenProvider {
   constructor(
     readonly clientId: string,
     readonly redirectUri: string,
+    readonly selectAccount = false,
   ) {}
 
   async getAccessToken(): Promise<string> {
@@ -87,6 +91,7 @@ class ExtensionGoogleTokenProvider implements DriveAccessTokenProvider {
       url: buildExtensionGoogleOAuthUrl({
         clientId: this.clientId,
         redirectUri: this.redirectUri,
+        selectAccount: this.selectAccount,
         state,
       }),
     });
@@ -118,14 +123,17 @@ export function withExtensionGoogleDriveSync(
 ): CoreVaultClient & VaultClient {
   let tokens: ExtensionGoogleTokenProvider | null = null;
   let configuredClientId = "";
-  const tokenProvider = (clientId: string) => {
-    if (tokens === null || configuredClientId !== clientId) {
+  let accountEmail: string | null = null;
+  const tokenProvider = (clientId: string, selectAccount = false) => {
+    if (tokens === null || configuredClientId !== clientId || selectAccount) {
       tokens?.disconnect();
       tokens = new ExtensionGoogleTokenProvider(
         clientId,
         browser.identity.getRedirectURL("oauth/google"),
+        selectAccount,
       );
       configuredClientId = clientId;
+      if (selectAccount) accountEmail = null;
     }
     return tokens;
   };
@@ -135,6 +143,27 @@ export function withExtensionGoogleDriveSync(
       ...(namespace === undefined ? {} : { namespace }),
       tokenProvider: tokenProvider(clientId),
     });
+  const readAccountEmail = async (accessToken: string): Promise<string | null> => {
+    try {
+      const response = await globalThis.fetch(
+        "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)",
+        { headers: { authorization: `Bearer ${accessToken}` } },
+      );
+      if (!response.ok) return null;
+      const value = (await response.json()) as {
+        readonly user?: { readonly emailAddress?: unknown };
+      };
+      const email = value.user?.emailAddress;
+      return typeof email === "string" && email.length <= 320 ? email : null;
+    } catch {
+      return null;
+    }
+  };
+  const authorize = async (clientId: string, selectAccount = false) => {
+    const accessToken = await tokenProvider(clientId, selectAccount).getAccessToken();
+    accountEmail = await readAccountEmail(accessToken);
+    return accessToken;
+  };
   const namespace = async (rootKey: Uint8Array, vaultId: string) => {
     const value = await cryptoProvider.hkdfSha256(
       rootKey,
@@ -154,6 +183,14 @@ export function withExtensionGoogleDriveSync(
       tokens?.disconnect();
       tokens = null;
       configuredClientId = "";
+      accountEmail = null;
+      localStorage.removeItem(DRIVE_CONNECTED_KEY);
+    },
+    getGoogleDriveAccount() {
+      return accountEmail;
+    },
+    isGoogleDriveConnected() {
+      return localStorage.getItem(DRIVE_CONNECTED_KEY) === "true";
     },
     async restoreFromGoogleDrive(request: {
       readonly clientId: string;
@@ -164,21 +201,44 @@ export function withExtensionGoogleDriveSync(
         throw new Error("Encrypted archive restore is unavailable");
       }
       const drive = provider(request.clientId.trim());
-      await tokenProvider(request.clientId.trim()).getAccessToken();
+      await authorize(request.clientId.trim());
       const archive = await drive.readEncryptedRecoveryArchive();
       if (archive === null) throw new Error("Google Drive recovery archive was not found");
+      localStorage.setItem(DRIVE_CONNECTED_KEY, "true");
       return await service.restoreEncryptedArchive({
         archive,
         newMasterPassword: request.newMasterPassword,
         recoveryKit: request.recoveryKit,
       });
     },
-    async syncGoogleDrive(request: { readonly clientId: string }): Promise<VaultSyncResult> {
+    async restoreFromGoogleDriveWithMasterPassword(request: {
+      readonly clientId: string;
+      readonly masterPassword: string;
+      readonly selectAccount?: boolean;
+    }) {
+      if (service.restoreEncryptedArchiveWithMasterPassword === undefined) {
+        throw new Error("Master-password archive restore is unavailable");
+      }
+      const clientId = request.clientId.trim();
+      await authorize(clientId, request.selectAccount);
+      const archive = await provider(clientId).readEncryptedRecoveryArchive();
+      if (archive === null) throw new Error("Google Drive vault was not found");
+      const restored = await service.restoreEncryptedArchiveWithMasterPassword({
+        archive,
+        masterPassword: request.masterPassword,
+      });
+      localStorage.setItem(DRIVE_CONNECTED_KEY, "true");
+      return restored;
+    },
+    async syncGoogleDrive(request: {
+      readonly clientId: string;
+      readonly selectAccount?: boolean;
+    }): Promise<VaultSyncResult> {
       if (service.exportSessionMaterial === undefined) throw new Error("Vault session unavailable");
       const material = service.exportSessionMaterial();
       try {
         const clientId = request.clientId.trim();
-        await tokenProvider(clientId).getAccessToken();
+        await authorize(clientId, request.selectAccount);
         const drive = provider(clientId, await namespace(material.rootKey, material.vaultId));
         const result = await syncVaultItems({
           codec: createEncryptedVaultSyncCodec(cryptoProvider, material.rootKey, material.vaultId),
@@ -192,7 +252,8 @@ export function withExtensionGoogleDriveSync(
           throw new Error("Encrypted recovery archive export is unavailable");
         }
         await drive.writeEncryptedRecoveryArchive(await service.exportEncryptedArchive());
-        return result;
+        localStorage.setItem(DRIVE_CONNECTED_KEY, "true");
+        return { ...result, ...(accountEmail === null ? {} : { accountEmail }) };
       } finally {
         zeroBytes(material.rootKey);
       }

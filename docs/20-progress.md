@@ -363,3 +363,24 @@ Created baseline context documents `00` through `30`, `docs/README.md`, and root
   artifact/permission/source-map/secret/size/SBOM checks. Fresh 0.10.0 Chrome and Firefox ZIPs were
   produced. The optional live-CDP smoke rerun was unavailable because no test Chrome was listening
   on `127.0.0.1:9223`; physical biometrics and live provider consent remain manual gates.
+- **Private email and authenticator inventory (2026-08-03):** Added signup-only plus addressing and
+  optional user-configured SimpleLogin/Addy.io alias creation. Provider secrets are stored only in
+  an encrypted reserved vault note; generated aliases are exact-origin/tab bound and are attached to
+  accepted encrypted login saves. Login records now support bounded public passkey references while
+  explicitly rejecting private-key material; TOTP remains locally generated encrypted MFA data. The
+  browser does not claim native passkey creation/signing. The complete local gate passes 38 test
+  files/250 tests, strict typechecking across all workspace packages, Chrome and Firefox MV3
+  production builds, and artifact/permission/source-map/secret/size/SBOM verification. Fresh
+  0.10.0 Chrome, Firefox, and source ZIPs were produced; physical authenticators and provider
+  consent remain external verification gates.
+- **Account and settings repair (2026-08-03):** Split Private Email, Cloud Sync, Import & Backup,
+  and Vault Security into mutually exclusive views and added a global semantic-hidden guard so
+  component display rules cannot expose inactive settings. Setup now clearly offers a no-account
+  local vault or a Google-connected encrypted vault. A clean device can select the owning Google
+  account and open the downloaded authenticated archive with the existing master password; account
+  switching and sign-out are explicit, and sign-out preserves the local encrypted copy. Touch ID
+  setup is shown only on an unenrolled browser, while enrolled device rows expose status and
+  individual revocation. Manual passkey metadata forms were removed in favor of the native WebAuthn
+  boundary. Regression coverage includes isolated settings, account state transitions, OAuth
+  account selection, existing-password archive restore, wrong-password rollback, and device-action
+  exclusivity.

@@ -21,11 +21,14 @@ import {
   generateAdaptiveRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
   OPEN_VAULT_MANAGER_TYPE,
+  PRIVATE_EMAIL_REQUEST_TYPE,
   PROFILE_AUTOFILL_REQUEST_TYPE,
   PROFILE_AUTOFILL_SELECT_TYPE,
+  type PrivateEmailResponse,
   type ProfileAutofillResponse,
   parseBiometricFillRequest,
   parseShowAutofillRequest,
@@ -495,6 +498,28 @@ export default defineContentScript({
       });
     };
 
+    const requestPrivateEmail = (anchor: HTMLInputElement) => {
+      void sendMessage<PrivateEmailResponse>({
+        topUrl: location.href,
+        type: PRIVATE_EMAIL_REQUEST_TYPE,
+        userInitiated: true,
+        version: 1,
+      }).then((response) => {
+        if (response?.status === "value") {
+          fillProfileField(anchor, response.address);
+          return;
+        }
+        if (response?.status === "not-configured" || response?.status === "disabled") {
+          requestProfileSuggestions(anchor);
+        }
+      });
+    };
+
+    const requestProfileOrPrivateEmail = (anchor: HTMLInputElement) => {
+      if (isRegistrationEmailField(anchor)) requestPrivateEmail(anchor);
+      else requestProfileSuggestions(anchor);
+    };
+
     const requestCardSuggestions = (anchor: HTMLInputElement) => {
       const field = cardFieldKind(anchor);
       if (field === null) return;
@@ -693,7 +718,7 @@ export default defineContentScript({
           target instanceof HTMLInputElement &&
           profileFieldKind(target) !== null
         ) {
-          requestProfileSuggestions(target);
+          requestProfileOrPrivateEmail(target);
         } else if (event.isTrusted && window.top === window && isCredentialField(target)) {
           requestSuggestions(target);
         }
@@ -733,7 +758,7 @@ export default defineContentScript({
           event.target instanceof HTMLInputElement &&
           profileFieldKind(event.target) !== null
         ) {
-          requestProfileSuggestions(event.target);
+          requestProfileOrPrivateEmail(event.target);
         } else if (isCredentialField(event.target)) {
           requestSuggestions(event.target);
         }
@@ -803,7 +828,7 @@ export default defineContentScript({
         } else if (cardFieldKind(anchor) !== null) {
           requestCardSuggestions(anchor);
         } else if (profileFieldKind(anchor) !== null) {
-          requestProfileSuggestions(anchor);
+          requestProfileOrPrivateEmail(anchor);
         } else {
           requestSuggestions(anchor);
         }
@@ -861,7 +886,7 @@ export default defineContentScript({
         } else if (cardFieldKind(active) !== null) {
           requestCardSuggestions(active);
         } else if (profileFieldKind(active) !== null) {
-          requestProfileSuggestions(active);
+          requestProfileOrPrivateEmail(active);
         } else {
           requestSuggestions(active);
         }

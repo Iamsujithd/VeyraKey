@@ -91,6 +91,25 @@ export interface PaymentCardInputView {
   readonly title: string;
 }
 
+export interface LoginEmailAliasView {
+  readonly address: string;
+  readonly createdAt: string;
+  readonly createdForOrigin: string;
+  readonly provider: "addy" | "plus" | "simplelogin";
+  readonly providerAliasId?: string;
+  readonly sourceEmail?: string;
+}
+
+export interface PasskeyReferenceView {
+  readonly createdAt: string;
+  readonly credentialId?: string;
+  readonly discoverable?: boolean;
+  readonly displayName: string;
+  readonly provider: "external" | "platform" | "security-key";
+  readonly rpId: string;
+  readonly userName: string;
+}
+
 export interface VaultItemHistoryEntryView {
   readonly item: VaultItemView | null;
   readonly operation: "create" | "delete" | "update";
@@ -119,9 +138,11 @@ export interface VaultClient {
       | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
       | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
     readonly favorite?: boolean;
+    readonly emailAlias?: LoginEmailAliasView;
     readonly folder?: string;
     readonly notes: string;
     readonly password: string;
+    readonly passkeys?: readonly PasskeyReferenceView[];
     readonly tags?: readonly string[];
     readonly title: string;
     readonly totpUri?: string;
@@ -143,6 +164,8 @@ export interface VaultClient {
   exportEncryptedArchive?(): Promise<unknown>;
   getState(): VaultViewState;
   initialize(): Promise<VaultViewState>;
+  isGoogleDriveConnected?(): boolean;
+  getGoogleDriveAccount?(): string | null;
   importItems?(
     items: readonly (
       | {
@@ -178,10 +201,19 @@ export interface VaultClient {
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
   }): Promise<VaultViewState>;
+  restoreEncryptedArchiveWithMasterPassword?(request: {
+    readonly archive: unknown;
+    readonly masterPassword: string;
+  }): Promise<VaultViewState>;
   restoreFromGoogleDrive?(request: {
     readonly clientId: string;
     readonly newMasterPassword: string;
     readonly recoveryKit: string;
+  }): Promise<VaultViewState>;
+  restoreFromGoogleDriveWithMasterPassword?(request: {
+    readonly clientId: string;
+    readonly masterPassword: string;
+    readonly selectAccount?: boolean;
   }): Promise<VaultViewState>;
   restoreFromOneDrive?(request: {
     readonly clientId: string;
@@ -200,7 +232,10 @@ export interface VaultClient {
     credential: StepUpCredential,
   ): Promise<VaultViewState>;
   subscribe(listener: (state: VaultViewState) => void): () => void;
-  syncGoogleDrive?(request: { readonly clientId: string }): Promise<VaultSyncResult>;
+  syncGoogleDrive?(request: {
+    readonly clientId: string;
+    readonly selectAccount?: boolean;
+  }): Promise<VaultSyncResult>;
   syncOneDrive?(request: { readonly clientId: string }): Promise<VaultSyncResult>;
   unlock(masterPassword: string): Promise<VaultViewState>;
   unlockWithDevice(slotId: string): Promise<VaultViewState>;
@@ -213,9 +248,11 @@ export interface VaultClient {
         | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
         | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
       readonly favorite?: boolean;
+      readonly emailAlias?: LoginEmailAliasView;
       readonly folder?: string;
       readonly notes: string;
       readonly password: string;
+      readonly passkeys?: readonly PasskeyReferenceView[];
       readonly tags?: readonly string[];
       readonly title: string;
       readonly totpUri?: string;
@@ -248,6 +285,7 @@ export interface VaultClient {
 }
 
 export interface VaultSyncResult {
+  readonly accountEmail?: string;
   readonly conflicts: readonly {
     readonly itemId: string;
     readonly revisionIds: readonly string[];
@@ -278,11 +316,13 @@ export type VaultItemView =
         | { readonly checkedAt: string; readonly count: number; readonly status: "found" }
         | { readonly checkedAt: string; readonly status: "not-found" | "unavailable" };
       readonly createdAt: string;
+      readonly emailAlias?: LoginEmailAliasView;
       readonly favorite?: boolean;
       readonly folder?: string;
       readonly id: string;
       readonly notes: string;
       readonly password: string;
+      readonly passkeys?: readonly PasskeyReferenceView[];
       readonly revisionId: string;
       readonly tags?: readonly string[];
       readonly title: string;
@@ -368,6 +408,59 @@ const PRIMARY_PROFILE_FIELD_KEYS = new Set<ProfileField>([
   "lastName",
   "phone",
 ]);
+
+const PRIVATE_EMAIL_SETTINGS_TAG = "veyrakey:private-email-settings";
+const PRIVATE_EMAIL_SETTINGS_TITLE = "VeyraKey Private Email Settings";
+const PRIVATE_EMAIL_SETTINGS_FOLDER = "VeyraKey System";
+
+type PrivateEmailProvider = "addy" | "plus" | "simplelogin";
+
+function readPrivateEmailSettings(note: string): {
+  readonly apiSecret: string;
+  readonly autoFill: boolean;
+  readonly baseEmail: string;
+  readonly domain: string;
+  readonly provider: PrivateEmailProvider;
+} | null {
+  try {
+    const value = JSON.parse(note) as Record<string, unknown>;
+    if (value.version !== 1 || typeof value.autoFill !== "boolean") return null;
+    if (value.provider === "plus" && typeof value.baseEmail === "string") {
+      return {
+        apiSecret: "",
+        autoFill: value.autoFill,
+        baseEmail: value.baseEmail,
+        domain: "",
+        provider: "plus",
+      };
+    }
+    if (value.provider === "simplelogin" && typeof value.apiCode === "string") {
+      return {
+        apiSecret: value.apiCode,
+        autoFill: value.autoFill,
+        baseEmail: "",
+        domain: "",
+        provider: "simplelogin",
+      };
+    }
+    if (
+      value.provider === "addy" &&
+      typeof value.apiToken === "string" &&
+      typeof value.domain === "string"
+    ) {
+      return {
+        apiSecret: value.apiToken,
+        autoFill: value.autoFill,
+        baseEmail: "",
+        domain: value.domain,
+        provider: "addy",
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export interface VaultScreenProps {
   readonly client: VaultClient;
@@ -519,6 +612,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     defaultSetupDestination,
   );
   const [encryptedByosState, setEncryptedByosState] = useState("");
+  const [googleRestorePassword, setGoogleRestorePassword] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const [stepUpCompartment, setStepUpCompartment] = useState<SensitiveCompartment | null>(null);
@@ -551,6 +645,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
   const [itemUris, setItemUris] = useState("");
   const [itemBody, setItemBody] = useState("");
   const [itemTotpUri, setItemTotpUri] = useState("");
+  const [itemPasskeys, setItemPasskeys] = useState<readonly PasskeyReferenceView[]>([]);
   const [itemFolder, setItemFolder] = useState("");
   const [itemTags, setItemTags] = useState("");
   const [itemFavorite, setItemFavorite] = useState(false);
@@ -575,8 +670,22 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
   const googleClientId = providerConfiguration?.googleClientId?.trim() ?? "";
   const microsoftClientId = providerConfiguration?.microsoftClientId?.trim() ?? "";
   const [driveStatus, setDriveStatus] = useState("");
+  const [googleDriveConnected, setGoogleDriveConnected] = useState(
+    () => client.isGoogleDriveConnected?.() ?? false,
+  );
+  const [googleDriveAccount, setGoogleDriveAccount] = useState(
+    () => client.getGoogleDriveAccount?.() ?? null,
+  );
   const [oneDriveStatus, setOneDriveStatus] = useState("");
-  const [activeView, setActiveView] = useState<"settings" | "tools" | "vault">("vault");
+  const [privateEmailProvider, setPrivateEmailProvider] = useState<PrivateEmailProvider>("plus");
+  const [privateEmailBase, setPrivateEmailBase] = useState("");
+  const [privateEmailApiSecret, setPrivateEmailApiSecret] = useState("");
+  const [privateEmailDomain, setPrivateEmailDomain] = useState("");
+  const [privateEmailAutoFill, setPrivateEmailAutoFill] = useState(true);
+  const [privateEmailStatus, setPrivateEmailStatus] = useState("");
+  const [activeView, setActiveView] = useState<
+    "authenticators" | "cloud" | "data" | "private-email" | "settings" | "tools" | "vault"
+  >("vault");
   const recoveryContext = screenState.status === "unlocked" ? screenState.recovery.status : null;
   const itemRecoveryStatus = screenState.status === "unlocked" ? screenState.recovery.status : null;
 
@@ -675,6 +784,21 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     );
     const findings = analyzePasswordHealth(logins);
     setHealthFindings(Object.fromEntries(findings.map((finding) => [finding.id, finding])));
+  }, [items]);
+
+  useEffect(() => {
+    const settingsItem = items.find(
+      (item): item is Extract<VaultItemView, { type: "secure-note" }> =>
+        item.type === "secure-note" && item.tags?.includes(PRIVATE_EMAIL_SETTINGS_TAG) === true,
+    );
+    if (settingsItem === undefined) return;
+    const settings = readPrivateEmailSettings(settingsItem.note);
+    if (settings === null) return;
+    setPrivateEmailProvider(settings.provider);
+    setPrivateEmailBase(settings.baseEmail);
+    setPrivateEmailApiSecret(settings.apiSecret);
+    setPrivateEmailDomain(settings.domain);
+    setPrivateEmailAutoFill(settings.autoFill);
   }, [items]);
 
   async function createVault(event: FormEvent<HTMLFormElement>) {
@@ -804,6 +928,43 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     }
   }
 
+  async function restoreGoogleDriveWithMasterPassword() {
+    if (
+      client.restoreFromGoogleDriveWithMasterPassword === undefined ||
+      googleClientId.trim().length === 0
+    ) {
+      setError("Google Drive restore is not configured in this app build.");
+      return;
+    }
+    if (googleRestorePassword.length === 0) {
+      setError("Enter the existing master password for this vault.");
+      return;
+    }
+    setOperation("restore");
+    setError(null);
+    try {
+      const next = await client.restoreFromGoogleDriveWithMasterPassword({
+        clientId: googleClientId.trim(),
+        masterPassword: googleRestorePassword,
+        selectAccount: true,
+      });
+      setGoogleRestorePassword("");
+      setScreenState(next);
+      setGoogleDriveConnected(true);
+      setGoogleDriveAccount(client.getGoogleDriveAccount?.() ?? null);
+      setShowRestore(false);
+    } catch (error) {
+      setError(
+        operationError(
+          error,
+          "Unable to open the Google Drive vault. Check the selected Google account and master password.",
+        ),
+      );
+    } finally {
+      setOperation(null);
+    }
+  }
+
   async function restoreOneDrive() {
     if (client.restoreFromOneDrive === undefined || microsoftClientId.trim().length === 0) {
       setError("OneDrive is not configured in this app build.");
@@ -853,6 +1014,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
           setDriveStatus("Connecting the new encrypted vault to Google Drive…");
           try {
             const result = await client.syncGoogleDrive({ clientId: googleClientId });
+            setGoogleDriveConnected(true);
+            setGoogleDriveAccount(result.accountEmail ?? client.getGoogleDriveAccount?.() ?? null);
             setDriveStatus(
               `Cloud vault ready: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded.`,
             );
@@ -1090,6 +1253,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setItemUris("");
     setItemBody("");
     setItemTotpUri("");
+    setItemPasskeys([]);
     setItemFolder("");
     setItemTags("");
     setItemFavorite(false);
@@ -1112,6 +1276,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setItemUris(item.uris.join("\n"));
       setItemBody(item.notes);
       setItemTotpUri(item.totpUri ?? "");
+      setItemPasskeys(item.passkeys ?? []);
       setProfileFields(EMPTY_PROFILE);
       setPaymentCard(EMPTY_PAYMENT_CARD);
     } else if (item.type === "identity-profile") {
@@ -1120,6 +1285,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setItemUris("");
       setItemBody("");
       setItemTotpUri("");
+      setItemPasskeys([]);
       setProfileFields(
         Object.fromEntries(
           PROFILE_FIELDS.map(({ key }) => [key, item[key]]),
@@ -1132,6 +1298,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setItemUris("");
       setItemBody("");
       setItemTotpUri("");
+      setItemPasskeys([]);
       setProfileFields(EMPTY_PROFILE);
       setPaymentCard({
         billingAddress: item.billingAddress,
@@ -1149,6 +1316,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       setItemUris("");
       setItemBody(item.note);
       setItemTotpUri("");
+      setItemPasskeys([]);
       setProfileFields(EMPTY_PROFILE);
       setPaymentCard(EMPTY_PAYMENT_CARD);
     }
@@ -1187,6 +1355,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
           breachCheck: persistedBreachCheck(exposure),
           notes: itemBody,
           password: itemPassword,
+          ...(itemPasskeys.length === 0 ? {} : { passkeys: itemPasskeys }),
           title: itemTitle,
           totpUri: itemTotpUri.trim(),
           uris: itemUris
@@ -1194,6 +1363,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
             .map((uri) => uri.trim())
             .filter(Boolean),
           username: itemUsername,
+          ...(editingItem?.type === "login" && editingItem.emailAlias !== undefined
+            ? { emailAlias: editingItem.emailAlias }
+            : {}),
         };
         let saved: VaultItemView;
         if (editingItem?.type === "login") {
@@ -1365,6 +1537,74 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     URL.revokeObjectURL(url);
   }
 
+  async function savePrivateEmailSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setPrivateEmailStatus("");
+    let settings: Record<string, unknown>;
+    if (privateEmailProvider === "plus") {
+      const baseEmail = privateEmailBase.trim();
+      if (!/^[^\s@]+@[^\s@]+$/u.test(baseEmail)) {
+        setPrivateEmailStatus("Enter the inbox that should receive plus-addressed mail.");
+        return;
+      }
+      settings = { autoFill: privateEmailAutoFill, baseEmail, provider: "plus", version: 1 };
+    } else if (privateEmailProvider === "simplelogin") {
+      if (privateEmailApiSecret.trim().length === 0) {
+        setPrivateEmailStatus("Enter your SimpleLogin API code.");
+        return;
+      }
+      settings = {
+        apiCode: privateEmailApiSecret.trim(),
+        autoFill: privateEmailAutoFill,
+        provider: "simplelogin",
+        version: 1,
+      };
+    } else {
+      if (
+        privateEmailApiSecret.trim().length === 0 ||
+        !/^[^\s/@]+(?:\.[^\s/@]+)+$/u.test(privateEmailDomain.trim())
+      ) {
+        setPrivateEmailStatus("Enter your Addy.io API token and alias domain.");
+        return;
+      }
+      settings = {
+        apiToken: privateEmailApiSecret.trim(),
+        autoFill: privateEmailAutoFill,
+        domain: privateEmailDomain.trim().toLocaleLowerCase(),
+        provider: "addy",
+        version: 1,
+      };
+    }
+    setOperation("item");
+    try {
+      const input = {
+        folder: PRIVATE_EMAIL_SETTINGS_FOLDER,
+        note: JSON.stringify(settings),
+        tags: [PRIVATE_EMAIL_SETTINGS_TAG],
+        title: PRIVATE_EMAIL_SETTINGS_TITLE,
+      };
+      const existing = items.find(
+        (item): item is Extract<VaultItemView, { type: "secure-note" }> =>
+          item.type === "secure-note" && item.tags?.includes(PRIVATE_EMAIL_SETTINGS_TAG) === true,
+      );
+      if (existing === undefined) {
+        if (client.createSecureNote === undefined) throw new Error("Secure notes unavailable");
+        await client.createSecureNote(input);
+      } else {
+        if (client.updateSecureNote === undefined)
+          throw new Error("Secure note updates unavailable");
+        await client.updateSecureNote(existing.id, existing.revisionId, input);
+      }
+      setItems((await client.listItems?.()) ?? []);
+      setPrivateEmailStatus("Private email settings saved in the encrypted vault.");
+    } catch {
+      setPrivateEmailStatus("Unable to save private email settings.");
+    } finally {
+      setOperation(null);
+    }
+  }
+
   const busy = operation !== null;
   const recoveryDrill =
     screenState.status === "unlocked" && screenState.recovery.status === "pending";
@@ -1378,10 +1618,13 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     ? deviceSlotId
     : (deviceSlots[0]?.id ?? "");
   const normalizedSearch = itemSearch.trim().toLocaleLowerCase();
+  const libraryItems = items.filter(
+    (item) => !(item.type === "secure-note" && item.tags?.includes(PRIVATE_EMAIL_SETTINGS_TAG)),
+  );
   const visibleItems =
     normalizedSearch === ""
-      ? items
-      : items.filter((item) =>
+      ? libraryItems
+      : libraryItems.filter((item) =>
           [
             item.title,
             item.folder ?? "",
@@ -1395,6 +1638,13 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
         );
   const loginItems = items.filter(
     (item): item is Extract<VaultItemView, { type: "login" }> => item.type === "login",
+  );
+  const authenticatorItems = loginItems.filter(
+    (item) => item.totpUri !== undefined || (item.passkeys?.length ?? 0) > 0,
+  );
+  const authenticatorCount = authenticatorItems.reduce(
+    (count, item) => count + (item.totpUri === undefined ? 0 : 1) + (item.passkeys?.length ?? 0),
+    0,
   );
   const securityRecommendations = loginItems.flatMap((item) => {
     const finding = healthFindings[item.id];
@@ -1558,6 +1808,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
       const updated = await client.updateLogin(item.id, item.revisionId, {
         ...(item.favorite === undefined ? {} : { favorite: item.favorite }),
         ...(item.folder === undefined ? {} : { folder: item.folder }),
+        ...(item.emailAlias === undefined ? {} : { emailAlias: item.emailAlias }),
+        ...(item.passkeys === undefined ? {} : { passkeys: item.passkeys }),
         ...(item.tags === undefined ? {} : { tags: item.tags }),
         breachCheck: persistedBreachCheck(result),
         notes: item.notes,
@@ -1578,7 +1830,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     );
   }
 
-  async function syncGoogleDrive() {
+  async function syncGoogleDrive(selectAccount = false) {
     if (client.syncGoogleDrive === undefined || googleClientId.trim().length === 0) {
       setError("Google Drive is not configured in this app build.");
       return;
@@ -1587,7 +1839,12 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     setError(null);
     setDriveStatus("Waiting for Google Drive authorization…");
     try {
-      const result = await client.syncGoogleDrive({ clientId: googleClientId });
+      const result = await client.syncGoogleDrive({
+        clientId: googleClientId,
+        selectAccount,
+      });
+      setGoogleDriveConnected(true);
+      setGoogleDriveAccount(result.accountEmail ?? client.getGoogleDriveAccount?.() ?? null);
       setItems((await client.listItems?.()) ?? []);
       setDriveStatus(
         `Sync complete: ${result.revisionCount} encrypted revision(s), ${result.uploaded} uploaded, ${result.conflicts.length} conflict(s), ${result.quarantined} quarantined.`,
@@ -1595,6 +1852,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      if (code === "DRIVE_AUTH") setGoogleDriveConnected(false);
       setDriveStatus(
         code === "DRIVE_AUTH"
           ? "Google authorization expired or was revoked. Connect again to retry."
@@ -1616,7 +1874,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
   function disconnectGoogleDrive() {
     client.disconnectGoogleDrive?.();
-    setDriveStatus("Google Drive disconnected. No OAuth token was persisted.");
+    setGoogleDriveConnected(false);
+    setGoogleDriveAccount(null);
+    setDriveStatus("Signed out of Google Drive. The local encrypted vault remains available.");
   }
 
   async function syncOneDrive() {
@@ -1703,12 +1963,11 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
         {screenState.status === "needs-setup" && !showRestore ? (
           <>
             <div className="vault-copy">
-              <p className="eyebrow">Choose where your encrypted vault lives</p>
-              <h1 id="vault-status-title">Create your local vault</h1>
+              <p className="eyebrow">Choose how to use VeyraKey</p>
+              <h1 id="vault-status-title">Set up your vault</h1>
               <p className="vault-description">
-                Your keys are always created on this device. By default, only encrypted vault data
-                is copied to your personal cloud so the same vault can be restored on another
-                device.
+                Use a private local vault without an account, or connect your Google account for
+                encrypted sync and access from your other devices.
               </p>
             </div>
             <PrivacyNote state={screenState} />
@@ -1727,8 +1986,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       type="radio"
                     />
                     <span>
-                      <strong>Google Drive</strong>
-                      <small>Recommended · private app-data storage · multi-device restore</small>
+                      <strong>Continue with Google</strong>
+                      <small>
+                        Recommended · encrypted sync · use the same vault on other devices
+                      </small>
                     </span>
                   </label>
                 )}
@@ -1760,8 +2021,10 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     type="radio"
                   />
                   <span>
-                    <strong>This device only</strong>
-                    <small>Optional local-only mode · connect or migrate to cloud later</small>
+                    <strong>Use without an account</strong>
+                    <small>
+                      Local vault on this device · connect to Google later if you choose
+                    </small>
                   </span>
                 </label>
               </fieldset>
@@ -1791,8 +2054,8 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
               </label>
               <p className="form-guidance">
                 {setupDestination === "local"
-                  ? "Local-only mode is selected. You can add or migrate to a cloud provider later."
-                  : "Cloud connection starts after the Recovery Kit check. Your password and keys never leave this device."}
+                  ? "No registration or cloud connection. Your encrypted vault stays on this device."
+                  : "Google sign-in stores only encrypted vault data. Your master password and keys never leave this device."}
               </p>
               <ErrorMessage error={error} />
               {operation === "create" ? (
@@ -1822,7 +2085,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 }}
                 type="button"
               >
-                Restore from encrypted BYOS state
+                I already have a vault
               </button>
             </form>
           </>
@@ -1832,88 +2095,120 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
           <>
             <div className="vault-copy">
               <p className="eyebrow">Clean-profile recovery</p>
-              <h1 id="vault-status-title">Restore encrypted vault</h1>
+              <h1 id="vault-status-title">Open your existing vault</h1>
               <p className="vault-description">
-                Restore the same user vault on this device from Google Drive, OneDrive, or an
-                encrypted backup. Cloud authorization locates ciphertext; your Recovery Kit
-                authenticates and unwraps it locally.
+                Sign in to the Google account that stores your encrypted vault, then unlock it
+                locally with its existing master password.
               </p>
             </div>
             <form className="vault-form" onSubmit={restoreVault}>
-              <label className="vault-field">
-                <span>Encrypted BYOS vault state</span>
-                <textarea
-                  className="vault-input vault-textarea"
-                  disabled={busy}
-                  onChange={(event) => setEncryptedByosState(event.target.value)}
-                  spellCheck={false}
-                  value={encryptedByosState}
-                />
-              </label>
-              <label className="vault-field">
-                <span>Recovery Kit</span>
-                <textarea
-                  className="vault-input vault-textarea"
-                  disabled={busy}
-                  onChange={(event) => setRecoveryKitInput(event.target.value)}
-                  spellCheck={false}
-                  value={recoveryKitInput}
-                />
-              </label>
-              <label className="vault-field">
-                <span>New master password</span>
-                <input
-                  className="vault-input"
-                  disabled={busy}
-                  onChange={(event) => setRestorePassword(event.target.value)}
-                  type="password"
-                  value={restorePassword}
-                />
-              </label>
-              <label className="vault-field">
-                <span>Confirm new master password</span>
-                <input
-                  className="vault-input"
-                  disabled={busy}
-                  onChange={(event) => setRestoreConfirmation(event.target.value)}
-                  type="password"
-                  value={restoreConfirmation}
-                />
-              </label>
+              {client.restoreFromGoogleDriveWithMasterPassword === undefined ? null : (
+                <>
+                  <label className="vault-field">
+                    <span>Existing master password</span>
+                    <input
+                      autoComplete="current-password"
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setGoogleRestorePassword(event.target.value)}
+                      type="password"
+                      value={googleRestorePassword}
+                    />
+                  </label>
+                  <button
+                    className="action-button"
+                    disabled={busy || googleClientId.trim().length === 0}
+                    onClick={() => void restoreGoogleDriveWithMasterPassword()}
+                    type="button"
+                  >
+                    Sign in with Google and open vault
+                  </button>
+                  <p className="form-guidance">
+                    Google authorizes access to encrypted app data. Decryption still happens only on
+                    this device.
+                  </p>
+                </>
+              )}
+              <details className="transfer-disclosure">
+                <summary>Use a Recovery Kit or encrypted backup</summary>
+                <div className="transfer-fields">
+                  <label className="vault-field">
+                    <span>Encrypted backup contents</span>
+                    <textarea
+                      className="vault-input vault-textarea"
+                      disabled={busy}
+                      onChange={(event) => setEncryptedByosState(event.target.value)}
+                      spellCheck={false}
+                      value={encryptedByosState}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>Recovery Kit</span>
+                    <textarea
+                      className="vault-input vault-textarea"
+                      disabled={busy}
+                      onChange={(event) => setRecoveryKitInput(event.target.value)}
+                      spellCheck={false}
+                      value={recoveryKitInput}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>New master password</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setRestorePassword(event.target.value)}
+                      type="password"
+                      value={restorePassword}
+                    />
+                  </label>
+                  <label className="vault-field">
+                    <span>Confirm new master password</span>
+                    <input
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => setRestoreConfirmation(event.target.value)}
+                      type="password"
+                      value={restoreConfirmation}
+                    />
+                  </label>
+                  <button className="secondary-button" disabled={busy} type="submit">
+                    Restore encrypted backup
+                  </button>
+                  {client.restoreFromGoogleDrive === undefined ? null : (
+                    <button
+                      className="secondary-button"
+                      disabled={busy || googleClientId.trim().length === 0}
+                      onClick={() => void restoreGoogleDrive()}
+                      type="button"
+                    >
+                      Recover Google vault with Recovery Kit
+                    </button>
+                  )}
+                  {client.restoreFromOneDrive === undefined ? null : (
+                    <button
+                      className="secondary-button"
+                      disabled={busy || microsoftClientId.trim().length === 0}
+                      onClick={() => void restoreOneDrive()}
+                      type="button"
+                    >
+                      Recover OneDrive vault with Recovery Kit
+                    </button>
+                  )}
+                </div>
+              </details>
               <ErrorMessage error={error} />
-              <button className="action-button" disabled={busy} type="submit">
-                Restore and rewrap locally
-              </button>
-              {client.restoreFromGoogleDrive === undefined ? null : (
-                <button
-                  className="secondary-button"
-                  disabled={busy || googleClientId.trim().length === 0}
-                  onClick={() => void restoreGoogleDrive()}
-                  type="button"
-                >
-                  Restore directly from Google Drive
-                </button>
-              )}
-              {client.restoreFromOneDrive === undefined ? null : (
-                <button
-                  className="secondary-button"
-                  disabled={busy || microsoftClientId.trim().length === 0}
-                  onClick={() => void restoreOneDrive()}
-                  type="button"
-                >
-                  Restore directly from OneDrive
-                </button>
-              )}
               <button
                 className="secondary-button"
                 disabled={busy}
                 onClick={() => {
                   clearSecrets();
+                  setGoogleRestorePassword("");
                   setShowRestore(false);
                 }}
                 type="button"
               >
-                Back to vault creation
+                Back
               </button>
             </form>
           </>
@@ -2123,7 +2418,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   •••
                 </span>
                 <span>Passwords</span>
-                <strong>{items.length}</strong>
+                <strong>{libraryItems.length}</strong>
               </button>
               <button
                 aria-label="Security"
@@ -2138,9 +2433,62 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 <span>Security</span>
                 <strong>{securityRecommendations.length}</strong>
               </button>
-              <p className="navigation-label">Storage</p>
               <button
-                aria-label="Cloud & Data"
+                aria-label="Passkeys & MFA"
+                aria-current={activeView === "authenticators" ? "page" : undefined}
+                className={
+                  activeView === "authenticators" ? "nav-button nav-button-active" : "nav-button"
+                }
+                onClick={() => setActiveView("authenticators")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  ◎
+                </span>
+                <span>Passkeys & MFA</span>
+                <strong>{authenticatorCount}</strong>
+              </button>
+              <p className="navigation-label">Settings</p>
+              <button
+                aria-label="Private Email"
+                aria-current={activeView === "private-email" ? "page" : undefined}
+                className={
+                  activeView === "private-email" ? "nav-button nav-button-active" : "nav-button"
+                }
+                onClick={() => setActiveView("private-email")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  @
+                </span>
+                <span>Private Email</span>
+              </button>
+              <button
+                aria-label="Cloud Sync"
+                aria-current={activeView === "cloud" ? "page" : undefined}
+                className={activeView === "cloud" ? "nav-button nav-button-active" : "nav-button"}
+                onClick={() => setActiveView("cloud")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  ↑
+                </span>
+                <span>Cloud Sync</span>
+              </button>
+              <button
+                aria-label="Import & Backup"
+                aria-current={activeView === "data" ? "page" : undefined}
+                className={activeView === "data" ? "nav-button nav-button-active" : "nav-button"}
+                onClick={() => setActiveView("data")}
+                type="button"
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  ↕
+                </span>
+                <span>Import & Backup</span>
+              </button>
+              <button
+                aria-label="Vault Security"
                 aria-current={activeView === "settings" ? "page" : undefined}
                 className={
                   activeView === "settings" ? "nav-button nav-button-active" : "nav-button"
@@ -2149,9 +2497,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 type="button"
               >
                 <span className="nav-symbol" aria-hidden="true">
-                  ↕
+                  ⚙
                 </span>
-                <span>Cloud & Data</span>
+                <span>Vault Security</span>
               </button>
             </nav>
 
@@ -2179,9 +2527,9 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                   <div>
                     <p className="section-kicker">All items</p>
                     <h2 id="items-title">
-                      {items.length === 0
+                      {libraryItems.length === 0
                         ? "No saved items"
-                        : `${items.length} ${items.length === 1 ? "item" : "items"}`}
+                        : `${libraryItems.length} ${libraryItems.length === 1 ? "item" : "items"}`}
                     </h2>
                   </div>
                   <button
@@ -2220,7 +2568,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     value={itemSearch}
                   />
                 </label>
-                {items.length === 0 ? (
+                {libraryItems.length === 0 ? (
                   <div className="library-empty">
                     <span className="empty-symbol" aria-hidden="true">
                       •••
@@ -2259,6 +2607,17 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                         {item.favorite ? <span>Favorite</span> : null}
                         {item.type === "login" && totpCodes[item.id] !== undefined ? (
                           <span>Current code: {totpCodes[item.id]}</span>
+                        ) : null}
+                        {item.type === "login" && item.emailAlias !== undefined ? (
+                          <span>
+                            Private email: {item.emailAlias.address} · {item.emailAlias.provider}
+                          </span>
+                        ) : null}
+                        {item.type === "login" && item.passkeys?.length ? (
+                          <span>
+                            {item.passkeys.length} passkey reference
+                            {item.passkeys.length === 1 ? "" : "s"}
+                          </span>
                         ) : null}
                       </p>
                       <div className="item-actions">
@@ -2603,6 +2962,18 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                               {totpImportStatus}
                             </p>
                           ) : null}
+                          {itemPasskeys.length === 0 ? null : (
+                            <aside className="passkey-summary" aria-label="Linked passkeys">
+                              <strong>
+                                {itemPasskeys.length} linked passkey
+                                {itemPasskeys.length === 1 ? "" : "s"}
+                              </strong>
+                              <span>
+                                Created through the website&apos;s native Touch ID or security-key
+                                flow; VeyraKey retains only the linked public reference.
+                              </span>
+                            </aside>
+                          )}
                         </>
                       ) : itemType === "identity-profile" ? (
                         <>
@@ -2828,9 +3199,113 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
               </section>
             </div>
 
-            <div className="app-view" hidden={activeView !== "settings"}>
+            <div className="app-view" hidden={activeView !== "authenticators"}>
+              <section
+                className="security-section authenticator-section"
+                aria-labelledby="authenticator-title"
+              >
+                <header className="settings-view-heading">
+                  <div>
+                    <p className="eyebrow">Account security</p>
+                    <h2 id="authenticator-title">Passkeys & MFA</h2>
+                    <p>
+                      Keep passkey references and authenticator codes beside the matching encrypted
+                      login. Passkey private keys remain protected by the platform or security key.
+                    </p>
+                  </div>
+                  <button
+                    className="action-button compact-button"
+                    onClick={() => {
+                      clearItemForm({ keepOpen: true });
+                      setItemType("login");
+                      setActiveView("vault");
+                    }}
+                    type="button"
+                  >
+                    Add login security
+                  </button>
+                </header>
+                {authenticatorItems.length === 0 ? (
+                  <div className="authenticator-empty">
+                    <span className="cloud-provider-mark" aria-hidden="true">
+                      ◎
+                    </span>
+                    <div>
+                      <strong>No passkeys or authenticator codes saved</strong>
+                      <p>Add them to a login to keep recovery metadata and codes organized.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="authenticator-list">
+                    {authenticatorItems.map((item) => (
+                      <article className="authenticator-row" key={item.id}>
+                        <div className="authenticator-row-heading">
+                          <div>
+                            <strong>{item.title}</strong>
+                            <span>{item.username || "Login"}</span>
+                          </div>
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={() => {
+                              editItem(item);
+                              setActiveView("vault");
+                            }}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        {item.totpUri === undefined ? null : (
+                          <div className="authenticator-detail">
+                            <div>
+                              <strong>Authenticator code</strong>
+                              <span>{totpCodes[item.id] ?? "Encrypted and ready"}</span>
+                            </div>
+                            <button
+                              className="secondary-button compact-button"
+                              onClick={() => void revealTotp(item)}
+                              type="button"
+                            >
+                              Show code
+                            </button>
+                          </div>
+                        )}
+                        {(item.passkeys ?? []).map((passkey) => (
+                          <div
+                            className="authenticator-detail"
+                            key={
+                              passkey.credentialId ??
+                              `${passkey.rpId}-${passkey.userName}-${passkey.createdAt}`
+                            }
+                          >
+                            <div>
+                              <strong>{passkey.displayName || "Passkey"}</strong>
+                              <span>{passkey.userName || "No username"}</span>
+                            </div>
+                            <span className="authenticator-provider">
+                              {passkey.rpId} · {passkey.provider}
+                            </span>
+                          </div>
+                        ))}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div
+              className="app-view"
+              hidden={
+                activeView !== "cloud" && activeView !== "data" && activeView !== "private-email"
+              }
+            >
               {client.syncGoogleDrive === undefined ? null : (
-                <section className="cloud-card" aria-labelledby="drive-title">
+                <section
+                  className="cloud-card"
+                  aria-labelledby="drive-title"
+                  hidden={activeView !== "cloud"}
+                >
                   <div className="cloud-card-heading">
                     <span className="cloud-provider-mark" aria-hidden="true">
                       G
@@ -2844,28 +3319,55 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                     Sync, restore, or migrate this encrypted vault through your Google account. Only
                     authenticated ciphertext is uploaded; this app never uploads plaintext keys.
                   </p>
-                  <button
-                    className="action-button"
-                    disabled={busy || googleClientId.trim().length === 0}
-                    onClick={() => void syncGoogleDrive()}
-                    type="button"
-                  >
-                    Sync or migrate to Google Drive
-                  </button>
+                  {googleDriveConnected ? (
+                    <div className="cloud-account-panel">
+                      <p>
+                        <strong>Connected</strong>
+                        <span>{googleDriveAccount ?? "Google Drive private app data"}</span>
+                      </p>
+                      <button
+                        className="action-button"
+                        disabled={busy}
+                        onClick={() => void syncGoogleDrive()}
+                        type="button"
+                      >
+                        Sync now
+                      </button>
+                      <div className="button-row">
+                        <button
+                          className="secondary-button compact-button"
+                          disabled={busy}
+                          onClick={() => void syncGoogleDrive(true)}
+                          type="button"
+                        >
+                          Use another Google account
+                        </button>
+                        <button
+                          className="secondary-button compact-button"
+                          disabled={busy}
+                          onClick={disconnectGoogleDrive}
+                          type="button"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className="action-button"
+                      disabled={busy || googleClientId.trim().length === 0}
+                      onClick={() => void syncGoogleDrive(true)}
+                      type="button"
+                    >
+                      Continue with Google
+                    </button>
+                  )}
                   {googleClientId === "" ? (
                     <p className="configuration-error" role="status">
                       Google Drive is unavailable because this app build has not been configured by
                       its owner.
                     </p>
                   ) : null}
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={disconnectGoogleDrive}
-                    type="button"
-                  >
-                    Disconnect Google Drive
-                  </button>
                   {driveStatus ? (
                     <p aria-live="polite" className="form-guidance" role="status">
                       {driveStatus}
@@ -2875,7 +3377,11 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
               )}
 
               {client.syncOneDrive === undefined ? null : (
-                <section className="cloud-card" aria-labelledby="onedrive-title">
+                <section
+                  className="cloud-card"
+                  aria-labelledby="onedrive-title"
+                  hidden={activeView !== "cloud"}
+                >
                   <div className="cloud-card-heading">
                     <span className="cloud-provider-mark microsoft-mark" aria-hidden="true">
                       M
@@ -2919,7 +3425,113 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                 </section>
               )}
 
-              <section className="cloud-card transfer-card" aria-labelledby="transfer-title">
+              <section
+                className="cloud-card"
+                aria-labelledby="private-email-title"
+                hidden={activeView !== "private-email"}
+              >
+                <div className="cloud-card-heading">
+                  <span className="cloud-provider-mark" aria-hidden="true">
+                    @
+                  </span>
+                  <div>
+                    <h2 id="private-email-title">Private Email</h2>
+                    <p>Unique addresses for signup forms</p>
+                  </div>
+                </div>
+                <p className="form-guidance">
+                  Plus addressing works without a third party when your mail provider supports it.
+                  SimpleLogin and Addy.io require your own account token. The configuration and
+                  tokens are encrypted inside this vault and sync only as ciphertext.
+                </p>
+                <form className="vault-form inset-form" onSubmit={savePrivateEmailSettings}>
+                  <label className="vault-field">
+                    <span>Alias method</span>
+                    <select
+                      className="vault-input"
+                      disabled={busy}
+                      onChange={(event) => {
+                        setPrivateEmailProvider(event.target.value as PrivateEmailProvider);
+                        setPrivateEmailStatus("");
+                      }}
+                      value={privateEmailProvider}
+                    >
+                      <option value="plus">Plus addressing (no service)</option>
+                      <option value="simplelogin">SimpleLogin</option>
+                      <option value="addy">Addy.io</option>
+                    </select>
+                  </label>
+                  {privateEmailProvider === "plus" ? (
+                    <label className="vault-field">
+                      <span>Delivery inbox</span>
+                      <input
+                        autoComplete="email"
+                        className="vault-input"
+                        disabled={busy}
+                        onChange={(event) => setPrivateEmailBase(event.target.value)}
+                        placeholder="you@example.com"
+                        type="email"
+                        value={privateEmailBase}
+                      />
+                    </label>
+                  ) : (
+                    <>
+                      <label className="vault-field">
+                        <span>
+                          {privateEmailProvider === "simplelogin"
+                            ? "SimpleLogin API code"
+                            : "Addy.io API token"}
+                        </span>
+                        <input
+                          autoComplete="off"
+                          className="vault-input"
+                          disabled={busy}
+                          onChange={(event) => setPrivateEmailApiSecret(event.target.value)}
+                          spellCheck={false}
+                          type="password"
+                          value={privateEmailApiSecret}
+                        />
+                      </label>
+                      {privateEmailProvider === "addy" ? (
+                        <label className="vault-field">
+                          <span>Addy.io alias domain</span>
+                          <input
+                            className="vault-input"
+                            disabled={busy}
+                            onChange={(event) => setPrivateEmailDomain(event.target.value)}
+                            placeholder="your-domain.anonaddy.com"
+                            spellCheck={false}
+                            value={privateEmailDomain}
+                          />
+                        </label>
+                      ) : null}
+                    </>
+                  )}
+                  <label className="vault-field">
+                    <input
+                      checked={privateEmailAutoFill}
+                      disabled={busy}
+                      onChange={(event) => setPrivateEmailAutoFill(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Generate and fill on recognized signup email fields</span>
+                  </label>
+                  <button className="action-button compact-button" disabled={busy} type="submit">
+                    Save private email settings
+                  </button>
+                  {privateEmailStatus ? (
+                    <p aria-live="polite" className="form-guidance" role="status">
+                      {privateEmailStatus}
+                    </p>
+                  ) : null}
+                </form>
+              </section>
+
+              <section
+                className="cloud-card transfer-card"
+                aria-labelledby="transfer-title"
+                hidden={activeView !== "data"}
+              >
                 <div className="cloud-card-heading">
                   <span className="cloud-provider-mark transfer-mark" aria-hidden="true">
                     ↕
@@ -3261,7 +3873,12 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
 
               <section className="security-section" aria-labelledby="device-title">
                 <h2 id="device-title">Device unlock</h2>
-                {screenState.deviceUnlock.available ? (
+                <p className="form-guidance">
+                  Touch ID enrollment belongs to this browser on this device. Other devices enroll
+                  separately after opening the same encrypted vault.
+                </p>
+                {screenState.deviceUnlock.available &&
+                screenState.deviceUnlock.slots.length === 0 ? (
                   <form className="vault-form inset-form" onSubmit={enrollDevice}>
                     <label className="vault-field">
                       <span>Master password for device enrollment</span>
@@ -3277,20 +3894,17 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       Set up Touch ID
                     </button>
                   </form>
-                ) : (
+                ) : !screenState.deviceUnlock.available ? (
                   <p className="capability-note">
                     WebAuthn PRF is unsupported on this surface. It is not emulated; password and
                     Recovery Kit unlock remain available.
                   </p>
-                )}
-                {screenState.deviceUnlock.slots.map((slot) => (
+                ) : null}
+                {screenState.deviceUnlock.slots.map((slot, index) => (
                   <div className="security-row" key={slot.id}>
                     <p>
-                      <strong>Enrolled device slot</strong>
-                      <span>
-                        Revocation prevents future use after updated state is available; it cannot
-                        erase keys already extracted from an unlocked device.
-                      </span>
+                      <strong>Touch ID on this browser{index === 0 ? "" : ` ${index + 1}`}</strong>
+                      <span>Active · available for local vault unlock and protected autofill</span>
                     </p>
                     <button
                       className="danger-button compact-button"
@@ -3298,7 +3912,7 @@ export function VaultScreen({ client, providerConfiguration, surface }: VaultScr
                       onClick={() => void revokeDevice(slot.id)}
                       type="button"
                     >
-                      Revoke enrolled device
+                      Revoke
                     </button>
                   </div>
                 ))}

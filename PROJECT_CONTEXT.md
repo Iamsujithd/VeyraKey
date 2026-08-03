@@ -12,7 +12,7 @@
 
 ## Mission
 
-Build an industry-grade portfolio v1: a browser-first, zero-knowledge password manager with encrypted offline storage, user-controlled recovery, deterministic Google Drive synchronization, safe browser autofill, TOTP, encrypted backup/restore, and local password-health analysis. The application server must never possess keys that decrypt vault content.
+Build an industry-grade portfolio v1: a browser-first, zero-knowledge password manager with encrypted offline storage, user-controlled recovery, deterministic Google Drive synchronization, safe browser autofill, TOTP, private-email aliases, encrypted backup/restore, and local password-health analysis. The application server must never possess keys that decrypt vault content.
 
 ## Non-negotiable invariants
 
@@ -46,11 +46,13 @@ Build an industry-grade portfolio v1: a browser-first, zero-knowledge password m
 - Generic CSV and one Bitwarden-compatible importer.
 - Provider-independent encrypted archive backup and restore.
 - Local weak/reused/old password analysis and HIBP k-anonymous compromise checks.
+- Signup-only private-email generation through plus addressing or a user-configured SimpleLogin/Addy.io account. Provider secrets remain encrypted vault content.
+- Public references to passkeys held by platform authenticators, security keys, or external providers. TOTP seeds remain encrypted login data; passkey private keys are never imported into the WebExtension.
 - Whole-system hardening, accessibility, reproducible deployment, and a polished portfolio demonstration.
 
 ## Explicit non-goals for v1
 
-- WebDAV, multiple production providers, cards, identities, addresses, attachments, payment autofill, software passkeys, SSH keys, Secure Send, document intelligence, digital credentials, DigiLocker, iCloud, Safari, native desktop/mobile apps, native SSH agent, browser SSH terminal, persistent live shared vaults, emergency access, continuous paid breach monitoring, email aliases, arbitrary-PDF selective disclosure, and paid eSign generation.
+- WebDAV, multiple production providers, attachments, software passkey private-key custody/signing, SSH keys, Secure Send, document intelligence, digital credentials, DigiLocker, iCloud, Safari, native desktop/mobile apps, native SSH agent, browser SSH terminal, persistent live shared vaults, emergency access, continuous paid breach monitoring, a project-operated email relay/domain, arbitrary-PDF selective disclosure, and paid eSign generation.
 
 ## Security model summary
 
@@ -58,7 +60,7 @@ Task 3 persists independent random root, document, and credential keys, each wra
 
 ## Deferred expansion
 
-The former document-wallet, digital-credential, DigiLocker, Secure Send, SSH, software-passkey, WebDAV, and broader item plans are preserved as future work, not v1 commitments. See [`docs/32-future-work.md`](docs/32-future-work.md).
+The former document-wallet, digital-credential, DigiLocker, Secure Send, SSH, native passkey-provider, WebDAV, and broader item plans are preserved as future work, not v1 commitments. See [`docs/32-future-work.md`](docs/32-future-work.md). The browser alias and passkey-reference boundary is specified in [`docs/39-private-email-and-passkey-boundary.md`](docs/39-private-email-and-passkey-boundary.md).
 
 ## Working rules for future agents
 

@@ -62,9 +62,7 @@ describe("VaultScreen lifecycle safety", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry vault loading" }));
 
-    expect(
-      await screen.findByRole("heading", { name: "Create your local vault" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up your vault" })).toBeInTheDocument();
     expect(client.initialize).toHaveBeenCalledTimes(2);
   });
 

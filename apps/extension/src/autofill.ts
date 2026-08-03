@@ -14,6 +14,7 @@ export const CAPTURE_PENDING_TYPE = "zk-wallet.capture-pending.v1" as const;
 export const USERNAME_OBSERVED_TYPE = "zk-wallet.username-observed.v1" as const;
 export const PROFILE_AUTOFILL_REQUEST_TYPE = "zk-wallet.profile-autofill-request.v1" as const;
 export const PROFILE_AUTOFILL_SELECT_TYPE = "zk-wallet.profile-autofill-select.v1" as const;
+export const PRIVATE_EMAIL_REQUEST_TYPE = "zk-wallet.private-email-request.v1" as const;
 export const CARD_AUTOFILL_REQUEST_TYPE = "zk-wallet.card-autofill-request.v1" as const;
 export const CARD_AUTOFILL_SELECT_TYPE = "zk-wallet.card-autofill-select.v1" as const;
 export const SHOW_AUTOFILL_TYPE = "zk-wallet.show-autofill.v1" as const;
@@ -119,6 +120,10 @@ export interface ProfileAutofillSelectRequest extends OriginRequest {
   readonly type: typeof PROFILE_AUTOFILL_SELECT_TYPE;
 }
 
+export interface PrivateEmailRequest extends OriginRequest {
+  readonly type: typeof PRIVATE_EMAIL_REQUEST_TYPE;
+}
+
 export interface CardAutofillRequest extends OriginRequest {
   readonly field: CardFieldKind;
   readonly type: typeof CARD_AUTOFILL_REQUEST_TYPE;
@@ -158,6 +163,18 @@ export type CardAutofillResponse =
       readonly version: 1;
     }
   | { readonly status: "value"; readonly value: string; readonly version: 1 };
+
+export type PrivateEmailResponse =
+  | {
+      readonly status: "disabled" | "locked" | "not-configured" | "unavailable";
+      readonly version: 1;
+    }
+  | {
+      readonly address: string;
+      readonly provider: "addy" | "plus" | "simplelogin";
+      readonly status: "value";
+      readonly version: 1;
+    };
 
 export type AutofillResponse =
   | { readonly status: "no-match" | "unavailable"; readonly version: 1 }
@@ -505,6 +522,16 @@ export function parseProfileAutofillSelectRequest(
     : null;
 }
 
+export function parsePrivateEmailRequest(value: unknown): PrivateEmailRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const request = value as Record<string, unknown>;
+  return Object.keys(request).sort().join(",") === "topUrl,type,userInitiated,version" &&
+    request.type === PRIVATE_EMAIL_REQUEST_TYPE &&
+    validOriginRequest(request)
+    ? (request as unknown as PrivateEmailRequest)
+    : null;
+}
+
 const CARD_FIELDS = new Set<CardFieldKind>([
   "billingAddress",
   "cardNumber",
@@ -693,6 +720,68 @@ function registrationHint(input: HTMLInputElement, includeAutocomplete = true): 
           .map((element) => `${element.textContent ?? ""} ${element.getAttribute("value") ?? ""}`)
           .join(" ")}`;
   return `${input.id} ${input.name} ${includeAutocomplete ? input.autocomplete : ""} ${input.getAttribute("aria-label") ?? ""} ${formHint}`.toLocaleLowerCase();
+}
+
+function registrationFormEvidence(input: HTMLInputElement): {
+  readonly negative: boolean;
+  readonly positive: boolean;
+} {
+  const form = input.form;
+  if (form === null) return { negative: false, positive: false };
+  const controls = [
+    ...form.querySelectorAll<HTMLElement>(
+      'button, input[type="submit"], [role="button"], h1, h2, legend',
+    ),
+  ]
+    .map((element) => `${element.textContent ?? ""} ${element.getAttribute("value") ?? ""}`)
+    .join(" ");
+  const structural = `${form.id} ${form.className} ${form.getAttribute("name") ?? ""} ${form.getAttribute("aria-label") ?? ""} ${form.getAttribute("action") ?? ""}`;
+  const hint = `${structural} ${controls}`.toLocaleLowerCase();
+  return {
+    negative:
+      /(?:^|[^a-z])(?:contact|forgot|log[-_\s]*in|newsletter|recover(?:y)?|reset[-_\s]*password|search|sign[-_\s]*in|subscribe)(?:[^a-z]|$)/u.test(
+        hint,
+      ),
+    positive:
+      /(?:^|[^a-z])(?:create[-_\s]*(?:an?[-_\s]*)?account|get[-_\s]*started|join|register|registration|sign[-_\s]*up|signup)(?:[^a-z]|$)/u.test(
+        hint,
+      ),
+  };
+}
+
+/**
+ * Returns true only when an email control belongs to a page that presents strong registration
+ * evidence. This deliberately rejects generic newsletter, contact, checkout, and login email
+ * fields so private aliases are never generated merely because a site used autocomplete=email.
+ */
+export function isRegistrationEmailField(element: Element | null): element is HTMLInputElement {
+  if (
+    !(element instanceof HTMLInputElement) ||
+    !element.isConnected ||
+    element.disabled ||
+    element.readOnly ||
+    element.type === "password"
+  ) {
+    return false;
+  }
+  const autocomplete = element.autocomplete.trim().split(/\s+/u).at(-1) ?? "";
+  const hint =
+    `${element.type} ${element.name} ${element.id} ${element.placeholder} ${element.getAttribute("aria-label") ?? ""}`.toLocaleLowerCase();
+  if (autocomplete !== "email" && element.type !== "email" && !/\be-?mail\b/u.test(hint)) {
+    return false;
+  }
+  const form = element.form;
+  if (form === null) return false;
+  if (form.querySelector('input[type="password"][autocomplete="current-password"]') !== null) {
+    return false;
+  }
+  const evidence = registrationFormEvidence(element);
+  const passwords = [...form.querySelectorAll<HTMLInputElement>('input[type="password"]')];
+  const hasRegistrationPassword = passwords.some((password) =>
+    isRegistrationPasswordField(password),
+  );
+  if (hasRegistrationPassword) return !evidence.negative;
+  return evidence.positive && !evidence.negative;
 }
 
 export function isRegistrationPasswordField(element: Element | null): element is HTMLInputElement {

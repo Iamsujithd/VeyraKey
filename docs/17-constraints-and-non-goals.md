@@ -26,7 +26,7 @@ Recovery uses user-held material. Support staff and server administrators cannot
 
 - WebDAV or multiple production sync providers.
 - Cards, identities, addresses, attachments, payment autofill, and custom fields.
-- Software-passkey storage.
+- Passkey private-key custody or WebAuthn assertion signing in the WebExtension.
 - SSH key storage.
 - Secure Send.
 - Document storage/intelligence and digital-credential protocols.
@@ -41,7 +41,7 @@ Recovery uses user-held material. Support staff and server administrators cannot
 - Emergency/delegate access.
 - Server-managed password reset or escrow.
 - Continuous paid email/dark-web breach monitoring.
-- Email aliases/two-way relay until domain and mail-provider architecture is separately approved.
+- A project-operated alias domain, SMTP ingress, or two-way email relay.
 - CCA eSign creation or any paid signing API.
 - Guaranteed secure deletion from provider backups or recipient devices.
 - Production SLA on free tiers.
@@ -68,5 +68,5 @@ Recovery uses user-held material. Support staff and server administrators cannot
 - iCloud provider.
 - Native SSH agent.
 - Document and digital-credential wallet expansions described in `32-future-work.md`.
-- Email alias service after domain/provider/business model decisions.
+- A native credential-provider target capable of creating and signing passkeys.
 - Persistent collaboration only after a separate group-key/access-revocation design.

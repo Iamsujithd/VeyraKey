@@ -3,10 +3,10 @@
   "product": "VeyraKey",
   "packageName": "veyrakey",
   "version": "0.10.0",
-  "generatedAt": "2026-07-31T16:24:23.261Z",
+  "generatedAt": "2026-08-03T19:16:17.048Z",
   "releaseStatus": "local-release-candidate",
   "source": {
-    "revision": "1f0d9a494612c0e2db124dccc12b1bd0d9bbac8d",
+    "revision": "80b8567ceb469e1f103168a31922ac34e7a3b86e",
     "workingTree": "modified"
   },
   "validation": {
@@ -23,7 +23,7 @@
     {
       "path": "apps/api/dist/README.md",
       "bytes": 113,
-      "sha256": "e0d97e1e64166e4cd000e2585fc088209b3cf58fc753dbeb661c82dde4e358ba"
+      "sha256": "ebed1cd4ff21e75a50f06bc81f81dca17178694d9aee414e3f7ad734fc8f6193"
     },
     {
       "path": "apps/api/dist/index.js",
@@ -32,18 +32,18 @@
     },
     {
       "path": "apps/extension/.output/veyrakey-extension-0.10.0-chrome.zip",
-      "bytes": 557687,
-      "sha256": "397e821cca2f7e96deb12a9f6f3a12bc2d6c2919be1cda257f68cca0a7bcf2e3"
+      "bytes": 563962,
+      "sha256": "dee56740c9d21d419c627661c8dfeb01eb1b68a90e2cebf3f86ac1564872616b"
     },
     {
       "path": "apps/extension/.output/veyrakey-extension-0.10.0-firefox.zip",
-      "bytes": 557745,
-      "sha256": "d5f8ec701f0cc5401750a7f37cb429435c502868d7dd9d87971037ce8c7e9c54"
+      "bytes": 564019,
+      "sha256": "3b47da0021b980bdc7a3163eee4ca3132f22e2bdf6d7595141a653c4908458af"
     },
     {
       "path": "apps/extension/.output/veyrakey-extension-0.10.0-sources.zip",
-      "bytes": 64289,
-      "sha256": "932026b65c63efecd0b32514542fc94037b40e56803cccde00d4358379166e84"
+      "bytes": 69076,
+      "sha256": "9166c04658f55fcf422af5c0daea0dd8f04a175d93526ff9eaf0f26953ee6ac7"
     },
     {
       "path": "apps/web/dist/assets/crypto-runtime-DFX5EOJJ.js",
@@ -51,14 +51,14 @@
       "sha256": "69da3b36cb4a84fb3c2fc3ca1265318cd9405046fd68bfbc654d330d15a12cb6"
     },
     {
-      "path": "apps/web/dist/assets/index-Bc5--Psy.css",
-      "bytes": 29484,
-      "sha256": "c38275d936617a63ed0e5cfb57eac41dc3cd723d5b45040e9e574a5cb16c3b99"
+      "path": "apps/web/dist/assets/index-DXD5oivY.css",
+      "bytes": 31124,
+      "sha256": "b2e2d328d9135e875362a6e7fa3d1e6e03daf047112cc59b892b0b850f96443a"
     },
     {
-      "path": "apps/web/dist/assets/index-ZuceNLzy.js",
-      "bytes": 175743,
-      "sha256": "10bcd4ad2b7dd53a4c091fceb6154e4bfe8fd3fb8b83abe293eee43a24c401b4"
+      "path": "apps/web/dist/assets/index-DaSuiGXE.js",
+      "bytes": 190635,
+      "sha256": "35c328b49ec6582b59d269036bf57b8b6699c852730b78239d70038ce1e719c8"
     },
     {
       "path": "apps/web/dist/assets/react-runtime-DYCTgQK0.js",
@@ -73,7 +73,7 @@
     {
       "path": "apps/web/dist/index.html",
       "bytes": 819,
-      "sha256": "b175f88facb7ca484d71d251588c15e08be0cc54f0cab47a1cfdbb3523b4206c"
+      "sha256": "5972d57a3d4f30cf13f70267bf045286b827df75969439a2f521ff7345f07c89"
     },
     {
       "path": "pnpm-lock.yaml",

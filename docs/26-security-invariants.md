@@ -42,33 +42,36 @@ These invariants are mandatory acceptance properties. A change that violates one
 27. HTTP, opaque, sandboxed, and cross-origin frame fills are denied by default.
 28. Native passkey fallback remains available; software passkeys do not silently downgrade RP security.
 29. Permissions remain least-privilege and user-visible.
+30. Alias-provider tokens are encrypted vault records; they never enter rebuildable suggestion indexes, logs, or page DOM.
+31. Private-email generation is limited to recognized signup email fields and never silently replaces user-entered text.
+32. A WebExtension stores only bounded public passkey references. Authenticator private keys and assertion material are never requested, imported, exported, or simulated.
 
 ## Document invariants
 
-30. Original bytes and hash are preserved separately from OCR/derivatives.
-31. Preview/OCR/parsers do not fetch remote resources based on document content.
-32. Plaintext thumbnails/indexes are not persisted.
-33. OCR/classification output is untrusted until user-confirmed.
-34. Redaction output is flattened/tested; hidden removed content is not retained.
-35. Signature validity is distinct from signer trust, status, and claim truth.
+33. Original bytes and hash are preserved separately from OCR/derivatives.
+34. Preview/OCR/parsers do not fetch remote resources based on document content.
+35. Plaintext thumbnails/indexes are not persisted.
+36. OCR/classification output is untrusted until user-confirmed.
+37. Redaction output is flattened/tested; hidden removed content is not retained.
+38. Signature validity is distinct from signer trust, status, and claim truth.
 
 ## Credential invariants
 
-36. Original credential bytes/token and exact profile version are preserved.
-37. Format adapters do not convert ordinary documents into issuer-backed credentials.
-38. Issuer signature, issuer identity, issuer authorization, status, holder binding, and purpose suitability are separate decisions.
-39. No silent credential presentation.
-40. Presentation shows requested/released claims and correlation handles before consent.
-41. Remote credential resources are constrained, validated, cached, and consent/policy controlled.
-42. SD-JWT is not described as fully unlinkable.
-43. Unsupported attestation/mdoc/DC API/DigiLocker behavior remains disabled and clearly reported.
+39. Original credential bytes/token and exact profile version are preserved.
+40. Format adapters do not convert ordinary documents into issuer-backed credentials.
+41. Issuer signature, issuer identity, issuer authorization, status, holder binding, and purpose suitability are separate decisions.
+42. No silent credential presentation.
+43. Presentation shows requested/released claims and correlation handles before consent.
+44. Remote credential resources are constrained, validated, cached, and consent/policy controlled.
+45. SD-JWT is not described as fully unlinkable.
+46. Unsupported attestation/mdoc/DC API/DigiLocker behavior remains disabled and clearly reported.
 
 ## Server and privacy invariants
 
-44. D1/R2 never contain decryptable vault content or transfer secrets.
-45. BYOS OAuth tokens/WebDAV credentials remain client-side.
-46. Logs/telemetry contain no sensitive payloads, user origins, secrets, claims, filenames, or raw parser errors.
-47. Secure Send keys remain in URL fragment/out-of-band and never reach server requests.
-48. Relay expiry/deletion is not marketed as revoking downloaded copies.
-49. Cloud AI/third-party OCR never receives document content.
-50. Marketing/security UX accurately states zero-knowledge, verification, audit, and free-tier limitations.
+47. D1/R2 never contain decryptable vault content or transfer secrets.
+48. BYOS OAuth tokens/WebDAV credentials remain client-side.
+49. Logs/telemetry contain no sensitive payloads, user origins, secrets, claims, filenames, or raw parser errors.
+50. Secure Send keys remain in URL fragment/out-of-band and never reach server requests.
+51. Relay expiry/deletion is not marketed as revoking downloaded copies.
+52. Cloud AI/third-party OCR never receives document content.
+53. Marketing/security UX accurately states zero-knowledge, verification, audit, and free-tier limitations.

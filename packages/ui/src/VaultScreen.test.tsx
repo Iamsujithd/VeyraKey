@@ -104,9 +104,7 @@ describe("VaultScreen", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent(/preparing vault/i);
-    expect(
-      await screen.findByRole("heading", { name: "Create your local vault" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up your vault" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "correct horse battery staple" },
@@ -132,7 +130,7 @@ describe("VaultScreen", () => {
   it("prevents mismatched confirmation without invoking cryptography", async () => {
     const vaultClient = client("needs-setup");
     render(<VaultScreen client={vaultClient} surface="Web application" />);
-    await screen.findByRole("heading", { name: "Create your local vault" });
+    await screen.findByRole("heading", { name: "Set up your vault" });
 
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "one password" },
@@ -162,11 +160,11 @@ describe("VaultScreen", () => {
         surface="Browser extension"
       />,
     );
-    await screen.findByRole("heading", { name: "Create your local vault" });
+    await screen.findByRole("heading", { name: "Set up your vault" });
 
-    expect(screen.getByRole("radio", { name: /Google Drive/u })).toBeChecked();
-    fireEvent.click(screen.getByRole("radio", { name: /This device only/u }));
-    expect(screen.getByText(/Local-only mode is selected/u)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Continue with Google/u })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /Use without an account/u }));
+    expect(screen.getByText(/No registration or cloud connection/u)).toBeInTheDocument();
   });
 
   it("collapses wrong-password and corruption failures into a safe unlock error", async () => {
@@ -490,7 +488,7 @@ describe("VaultScreen", () => {
     vaultClient.importItems = importItems;
     render(<VaultScreen client={vaultClient} surface="Web application" />);
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import & Backup" }));
     fireEvent.click(screen.getByText("Import passwords"));
 
     fireEvent.change(screen.getByLabelText("File contents"), {
@@ -538,18 +536,123 @@ describe("VaultScreen", () => {
       />,
     );
     await screen.findByRole("heading", { name: "Passwords" });
-    fireEvent.click(screen.getByRole("button", { name: "Cloud & Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cloud Sync" }));
 
-    const connect = screen.getByRole("button", { name: "Sync or migrate to Google Drive" });
+    const connect = screen.getByRole("button", { name: "Continue with Google" });
     expect(connect).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
     fireEvent.click(connect);
 
     await waitFor(() =>
       expect(syncGoogleDrive).toHaveBeenCalledWith({
         clientId: "fixture.apps.googleusercontent.com",
+        selectAccount: true,
       }),
     );
     expect(await screen.findByText(/2 encrypted revision\(s\), 1 uploaded/u)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use another Google account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull();
+  });
+
+  it("shows only sync and disconnect when Google Drive is already connected", async () => {
+    const vaultClient = client("unlocked");
+    vaultClient.isGoogleDriveConnected = () => true;
+    vaultClient.syncGoogleDrive = vi.fn(async () => ({
+      conflicts: [],
+      itemCount: 0,
+      quarantined: 0,
+      revisionCount: 0,
+      uploaded: 0,
+    }));
+    vaultClient.disconnectGoogleDrive = vi.fn();
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Browser extension"
+      />,
+    );
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Cloud Sync" }));
+
+    expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use another Google account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull();
+  });
+
+  it("keeps Private Email, Cloud Sync, and Import & Backup in separate settings views", async () => {
+    const vaultClient = client("unlocked");
+    vaultClient.syncGoogleDrive = vi.fn(async () => ({
+      conflicts: [],
+      itemCount: 0,
+      quarantined: 0,
+      revisionCount: 0,
+      uploaded: 0,
+    }));
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Browser extension"
+      />,
+    );
+    await screen.findByRole("heading", { name: "Passwords" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Private Email" }));
+    expect(screen.getByRole("heading", { name: "Private Email" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Google Drive" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Import & Backup" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cloud Sync" }));
+    expect(screen.getByRole("heading", { name: "Google Drive" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Private Email" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Import & Backup" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import & Backup" }));
+    expect(screen.getByRole("heading", { name: "Import & Backup" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Private Email" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Google Drive" })).toBeNull();
+  });
+
+  it("exposes passkeys and authenticator codes as a first-class vault section", async () => {
+    const vaultClient = client("unlocked");
+    const listItems = vaultClient.listItems;
+    if (listItems === undefined) throw new Error("Expected listItems support");
+    vi.mocked(listItems).mockResolvedValue([
+      {
+        createdAt: "2026-08-01T00:00:00.000Z",
+        id: "secured-login",
+        notes: "",
+        password: "synthetic-password",
+        passkeys: [
+          {
+            createdAt: "2026-08-01T00:00:00.000Z",
+            displayName: "Work laptop",
+            provider: "platform",
+            rpId: "accounts.example.test",
+            userName: "person@example.test",
+          },
+        ],
+        revisionId: "revision",
+        title: "Example account",
+        totpUri: "otpauth://totp/Example:person?secret=JBSWY3DPEHPK3PXP&issuer=Example",
+        type: "login",
+        updatedAt: "2026-08-01T00:00:00.000Z",
+        uris: ["https://accounts.example.test"],
+        username: "person@example.test",
+      },
+    ]);
+    render(<VaultScreen client={vaultClient} surface="Browser extension" />);
+    await screen.findByRole("heading", { name: "Passwords" });
+    fireEvent.click(screen.getByRole("button", { name: "Passkeys & MFA" }));
+
+    expect(screen.getByRole("heading", { name: "Passkeys & MFA" })).toBeInTheDocument();
+    expect(screen.getByText("Work laptop")).toBeInTheDocument();
+    expect(screen.getByText(/accounts\.example\.test · platform/u)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show code" })).toBeInTheDocument();
   });
 
   it("restores a clean profile directly from the encrypted Drive recovery archive", async () => {
@@ -564,8 +667,9 @@ describe("VaultScreen", () => {
         surface="Web application"
       />,
     );
-    await screen.findByRole("heading", { name: "Create your local vault" });
-    fireEvent.click(screen.getByRole("button", { name: "Restore from encrypted BYOS state" }));
+    await screen.findByRole("heading", { name: "Set up your vault" });
+    fireEvent.click(screen.getByRole("button", { name: "I already have a vault" }));
+    fireEvent.click(screen.getByText("Use a Recovery Kit or encrypted backup"));
 
     fireEvent.change(screen.getByLabelText("Recovery Kit"), {
       target: { value: "recovery-fixture" },
@@ -576,13 +680,42 @@ describe("VaultScreen", () => {
     fireEvent.change(screen.getByLabelText("Confirm new master password"), {
       target: { value: "new-password" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Restore directly from Google Drive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Recover Google vault with Recovery Kit" }));
 
     await waitFor(() =>
       expect(restoreFromGoogleDrive).toHaveBeenCalledWith({
         clientId: "fixture.apps.googleusercontent.com",
         newMasterPassword: "new-password",
         recoveryKit: "recovery-fixture",
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "Passwords" })).toBeInTheDocument();
+  });
+
+  it("opens an existing Google vault with its current master password", async () => {
+    const vaultClient = client("needs-setup");
+    const restoreFromGoogleDriveWithMasterPassword = vi.fn(async () => viewState("unlocked"));
+    vaultClient.restoreFromGoogleDriveWithMasterPassword = restoreFromGoogleDriveWithMasterPassword;
+    render(
+      <VaultScreen
+        client={vaultClient}
+        providerConfiguration={{ googleClientId: "fixture.apps.googleusercontent.com" }}
+        surface="Browser extension"
+      />,
+    );
+    await screen.findByRole("heading", { name: "Set up your vault" });
+    fireEvent.click(screen.getByRole("button", { name: "I already have a vault" }));
+
+    fireEvent.change(screen.getByLabelText("Existing master password"), {
+      target: { value: "existing-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Google and open vault" }));
+
+    await waitFor(() =>
+      expect(restoreFromGoogleDriveWithMasterPassword).toHaveBeenCalledWith({
+        clientId: "fixture.apps.googleusercontent.com",
+        masterPassword: "existing-password",
+        selectAccount: true,
       }),
     );
     expect(await screen.findByRole("heading", { name: "Passwords" })).toBeInTheDocument();

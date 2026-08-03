@@ -24,6 +24,8 @@ describe("extension manifest", () => {
     expect(extensionManifest.host_permissions).toEqual([
       "https://*.googleapis.com/*",
       "https://api.pwnedpasswords.com/*",
+      "https://app.simplelogin.io/*",
+      "https://app.addy.io/*",
     ]);
   });
 
@@ -34,6 +36,8 @@ describe("extension manifest", () => {
     expect(policy).toContain("object-src 'none'");
     expect(policy).toContain("connect-src 'self' https://*.googleapis.com");
     expect(policy).toContain("https://api.pwnedpasswords.com");
+    expect(policy).toContain("https://app.simplelogin.io");
+    expect(policy).toContain("https://app.addy.io");
     expect(policy).not.toMatch(/(?:^|[\s;])'unsafe-eval'(?:[\s;]|$)/u);
     expect(policy).not.toContain("unsafe-inline");
   });

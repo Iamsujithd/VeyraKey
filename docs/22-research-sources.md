@@ -9,6 +9,17 @@ Use primary/official sources first and re-check current versions before implemen
 
 ## Browser extension and passkeys
 
+- [W3C WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) — authenticators manage credential
+  private keys and assertions; the relying-party/browser surface does not export private keys.
+- [Chrome `webAuthenticationProxy`](https://developer.chrome.com/docs/extensions/reference/api/webAuthenticationProxy) — remote-desktop WebAuthn proxy API, not a general password-manager passkey-provider surface.
+
+## Private email providers
+
+- [SimpleLogin API documentation](https://github.com/simple-login/app/blob/master/docs/api.md) — API
+  authentication and random-alias creation contract.
+- [Addy.io API documentation](https://app.addy.io/docs/) — bearer authentication and alias creation
+  contract.
+
 - [WebAuthn Level 3 PRF extension](https://www.w3.org/TR/webauthn-3/#prf-extension) — credential-bound 32-byte PRF outputs, input processing, user verification, and registration/assertion semantics.
 - [WebAuthn client capabilities](https://www.w3.org/TR/webauthn-3/#sctn-getClientCapabilities) — `extension:<identifier>` runtime capability reporting; client support alone does not prove authenticator support.
 - [MDN WebAuthn extensions](https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API/WebAuthn_extensions#prf) — practical PRF registration/assertion input and output shapes and unsupported behavior.

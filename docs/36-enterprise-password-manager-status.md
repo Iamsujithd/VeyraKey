@@ -35,6 +35,13 @@ release contract, not a marketing wish list.
   keyboard-visible controls.
 - Weak, reused, and breached recommendations are actionable. Password age is deliberately not
   inferred from item edit time, so the product does not display a misleading “Old” classification.
+- Signup-only private-email AutoFill uses plus addressing by default after the user configures a
+  delivery inbox, or a user-owned SimpleLogin/Addy.io API token. Configuration is stored as an
+  encrypted system note, generated aliases are origin-bound, and an accepted credential save
+  records the alias with that encrypted login.
+- Login items may hold TOTP seeds and bounded public references to passkeys held by a platform,
+  security key, or external provider. The manager never represents a reference as a usable private
+  passkey.
 
 ## Deliberate security boundaries
 
@@ -57,7 +64,8 @@ Full passkey creation, storage, signing, conditional suggestions, and cross-devi
 behavior require a native credential-provider target, platform entitlements, RP/origin validation,
 secure private-key storage, signature-counter policy, browser registration, and a native fallback.
 The WebExtension therefore detects and leaves existing site/browser passkey flows intact; it does
-not intercept WebAuthn or claim to store passkey private keys.
+not intercept WebAuthn or claim to store passkey private keys. It records public RP/account/device
+metadata only, so users can inventory authenticator-held credentials alongside passwords and TOTP.
 
 The next valid implementation target is:
 

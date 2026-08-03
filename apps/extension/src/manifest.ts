@@ -8,10 +8,15 @@ export const extensionManifest = {
   },
   content_security_policy: {
     extension_pages:
-      "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://*.googleapis.com https://api.pwnedpasswords.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://*.googleapis.com https://api.pwnedpasswords.com https://app.simplelogin.io https://app.addy.io; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   },
   description: "A browser-first zero-knowledge security and identity wallet.",
-  host_permissions: ["https://*.googleapis.com/*", "https://api.pwnedpasswords.com/*"],
+  host_permissions: [
+    "https://*.googleapis.com/*",
+    "https://api.pwnedpasswords.com/*",
+    "https://app.simplelogin.io/*",
+    "https://app.addy.io/*",
+  ],
   icons: {
     16: "icons/icon-16.png",
     32: "icons/icon-32.png",

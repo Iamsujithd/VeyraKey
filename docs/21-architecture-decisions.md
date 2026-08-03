@@ -144,6 +144,30 @@ This is a concise decision log. During implementation, add dated ADR sections wi
 
 Content from external sources was rephrased for compliance with licensing restrictions.
 
+## ADR-036: Encrypted private-email configuration and authenticator-held passkey references
+
+- **Date:** 2026-08-03.
+- **Status:** Accepted for the browser release.
+- **Decision — aliases:** Plus addressing is the default no-service method after a user supplies a
+  delivery inbox. Optional SimpleLogin and Addy.io integrations use user-owned tokens and their
+  documented HTTPS APIs. Provider settings are encrypted as a reserved secure note, excluded from
+  the visible library, and never placed in the locked suggestion index. Alias generation is limited
+  to recognized signup email fields after trusted interaction, cached per exact origin/tab, and
+  recorded with the login only when the normal credential save is accepted.
+- **Decision — MFA:** TOTP remains encrypted login content and is calculated locally.
+- **Decision — passkeys:** Browser records contain public authenticator references only: RP ID,
+  account/display labels, authenticator category, optional public credential ID, discoverability,
+  and creation time. Strict parsing rejects secret/private-key fields. WebAuthn ceremonies remain
+  with the browser/platform authenticator.
+- **Consequences:** The product offers useful signup privacy and a synchronized credential inventory
+  without operating email infrastructure or making impossible WebExtension custody claims. Plus
+  aliases depend on mail-provider behavior; third-party aliases depend on the user's provider
+  account and availability. A true passkey provider remains a separate signed native-platform task.
+- **Rejected:** Provider tokens in extension storage, alias generation on login/current-password
+  forms, overwriting typed addresses, silent password-record creation, storing passkey private keys
+  as text, intercepting WebAuthn with the remote-desktop proxy API, and describing metadata as an
+  authenticating credential.
+
 ## ADR-036: Cloud-first portable vault, registration generation, and encrypted identity profiles
 
 - **Date:** 2026-07-28.
