@@ -3,11 +3,12 @@
 <div align="center">
   <img src="docs/assets/veyrakey_hero_banner.jpg" alt="VeyraKey — a zero-knowledge password manager" width="100%" />
 
-  <h3>Your passwords. Your cloud. Your keys.</h3>
+  <h3>The zero-knowledge password manager in your browser.</h3>
 
   <p>
-    A browser-first, zero-knowledge password manager that encrypts vault data locally and can sync
-    authenticated ciphertext through the user's own Google Drive.
+    An extension-first password manager for Chrome and Firefox. VeyraKey detects login and signup
+    forms, securely fills saved data, and syncs authenticated ciphertext through the user's own
+    Google Drive.
   </p>
 
   [![Release candidate](https://img.shields.io/badge/release%20candidate-v0.10.0-0A84FF?style=flat-square)](release/release-manifest.json)
@@ -26,6 +27,11 @@
 
 ## Why VeyraKey
 
+The browser extension is the product: it follows users across websites, recognizes authentication
+and registration flows, saves or updates credentials, offers private email aliases, and releases
+matching secrets only after the required local authorization. The web application is a companion
+development and recovery surface—not the primary user experience.
+
 Most password-manager demos stop at encrypted CRUD. VeyraKey treats the browser, cloud provider,
 autofill surface, device unlock flow, revision history, and release pipeline as separate trust
 boundaries.
@@ -37,6 +43,22 @@ boundaries.
 | **Local-first** | A vault can be used without a cloud account. Cloud connection is optional and reversible. |
 | **Origin-bound autofill** | Credentials are released only to an exact saved origin after the required local authorization. |
 | **Recoverable by design** | Encrypted backups and Recovery Kits exist; a server-side reset or escrow key does not. |
+
+## Extension-first experience
+
+VeyraKey is designed to stay available from the browser toolbar and directly beside relevant form
+fields. Users should not need to keep a separate web tab open.
+
+1. Visit a login or signup page.
+2. Select a saved account, generated password, identity value, or private email suggestion.
+3. Authorize with the active unlocked session, Touch ID/biometrics when enrolled, or the master
+   password fallback.
+4. VeyraKey fills only the recognized fields for the exact current origin.
+5. After a successful login or registration, accept the concise save/update prompt if the vault
+   record changed.
+
+The extension popup provides the complete vault library, security findings, passkey/TOTP metadata,
+private-email configuration, cloud sync, backup/import tools, and device security settings.
 
 ## Product preview
 
@@ -120,8 +142,8 @@ flowchart LR
 
 ```text
 apps/
-  extension/          WXT Manifest V3 extension for Chromium and Firefox
-  web/                React/Vite development and recovery surface
+  extension/          Primary product: WXT MV3 extension for Chromium and Firefox
+  web/                Companion React/Vite development and recovery surface
   api/                Minimal Hono health worker; no vault keys or records
 packages/
   crypto/             Project-owned cryptographic interface
@@ -166,22 +188,28 @@ non-goals are in [`docs/03-trust-and-threat-model.md`](docs/03-trust-and-threat-
 - Node.js `24.11.0`
 - pnpm `11.10.0`
 
+### Build and load the extension
+
 ```bash
 CI=true pnpm install --frozen-lockfile
-pnpm dev:web
-```
-
-The development UI opens at `http://127.0.0.1:5173`.
-
-### Build the extension
-
-```bash
 CI=true pnpm --dir apps/extension build
 ```
 
 Load `apps/extension/.output/chrome-mv3` from `chrome://extensions` with Developer mode enabled.
 After rebuilding or reloading the extension, refresh existing test pages so they receive the new
 content script.
+
+The toolbar popup is the main VeyraKey application. Pin the extension for quick access, create or
+restore a vault there, then test suggestions on HTTPS login and registration pages.
+
+### Run the companion web surface
+
+```bash
+pnpm dev:web
+```
+
+The optional development/recovery UI opens at `http://127.0.0.1:5173`. It shares the vault UI and
+core packages but is not required for normal extension use.
 
 ### Google Drive development setup
 
@@ -200,6 +228,9 @@ they require provider configuration and user interaction.
 
 | Command | Purpose |
 |---|---|
+| `pnpm dev:extension` | Run the primary extension target in watch mode |
+| `pnpm --dir apps/extension build` | Build Chrome and Firefox MV3 extension targets |
+| `pnpm dev:web` | Run the optional development/recovery companion |
 | `pnpm lint` | Biome formatting and lint rules |
 | `pnpm typecheck` | Strict TypeScript across the workspace |
 | `pnpm test` | Unit, property, integration, lifecycle, and compatibility tests |
