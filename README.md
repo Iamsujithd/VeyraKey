@@ -17,6 +17,9 @@
   [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](apps/extension)
   [![Firefox MV3](https://img.shields.io/badge/Firefox-MV3-FF7139?style=flat-square&logo=firefoxbrowser&logoColor=white)](apps/extension)
 
+  [![Download for Chrome](https://img.shields.io/badge/Download-Chrome%20extension-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/veyrakey-extension-0.10.0-chrome.zip)
+  [![Download for Firefox](https://img.shields.io/badge/Download-Firefox%20extension-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/veyrakey-extension-0.10.0-firefox.zip)
+
   [Quick start](#quick-start) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Security](#security-model) · [Documentation](docs/README.md)
 </div>
 
@@ -24,6 +27,38 @@
 > VeyraKey is a portfolio-grade release candidate, not an independently audited password manager.
 > Do not use pre-release builds for irreplaceable secrets. Public release still requires the external
 > evidence listed in [`release/external-gates.json`](release/external-gates.json).
+
+## Download VeyraKey
+
+Version `0.10.0` is distributed as a **release candidate for developer installation**. The archives
+are produced by the verified release pipeline, but they are not yet signed or reviewed by the Chrome
+Web Store or Firefox Add-ons.
+
+| Download | Intended use | SHA-256 |
+|---|---|---|
+| [Chrome MV3 extension](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/veyrakey-extension-0.10.0-chrome.zip) | Chrome, Edge, Brave, and other Chromium browsers | `dee56740c9d21d419c627661c8dfeb01eb1b68a90e2cebf3f86ac1564872616b` |
+| [Firefox MV3 extension](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/veyrakey-extension-0.10.0-firefox.zip) | Temporary developer installation in Firefox | `3b47da0021b980bdc7a3163eee4ca3132f22e2bdf6d7595141a653c4908458af` |
+| [Reviewable source archive](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/veyrakey-extension-0.10.0-sources.zip) | Source review and browser-store submission | `9166c04658f55fcf422af5c0daea0dd8f04a175d93526ff9eaf0f26953ee6ac7` |
+| [Release manifest](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/release-manifest.json) | Artifact inventory and automated-gate evidence | See the checksums inside the manifest |
+| [CycloneDX SBOM](https://github.com/Iamsujithd/VeyraKey/releases/download/v0.10.0/sbom.cdx.json) | Dependency and supply-chain review | See the release manifest |
+
+### Install the Chrome package
+
+1. Download and extract the Chrome ZIP.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked** and select the extracted folder containing `manifest.json`.
+5. Pin VeyraKey from the browser toolbar.
+
+### Install the Firefox package
+
+1. Download and extract the Firefox ZIP.
+2. Open `about:debugging#/runtime/this-firefox`.
+3. Choose **Load Temporary Add-on** and select `manifest.json` from the extracted folder.
+
+Firefox removes temporary add-ons when the browser restarts. A permanent one-click installation will
+be offered only after Mozilla signing; Chrome Web Store and Firefox Add-ons availability remain
+tracked external release gates.
 
 ## Why VeyraKey
 
