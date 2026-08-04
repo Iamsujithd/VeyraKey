@@ -752,6 +752,15 @@ function registrationFormEvidence(input: HTMLInputElement): {
     .join(" ");
   const structural = `${form.id} ${form.className} ${form.getAttribute("name") ?? ""} ${form.getAttribute("aria-label") ?? ""} ${form.getAttribute("action") ?? ""}`;
   const hint = `${structural} ${controls}`.toLocaleLowerCase();
+  // Some older form builders expose a completely generic <form> and "Submit" button while
+  // putting the only registration signal in the document title. Keep this signal deliberately
+  // narrow and subordinate to form-specific negative evidence so a newsletter or contact form
+  // embedded on a registration-themed page never receives an alias suggestion.
+  const pageTitle = input.ownerDocument.title.toLocaleLowerCase();
+  const pageTitleHasRegistrationIntent =
+    /(?:^|[^a-z])(?:create[-_\s]*(?:an?[-_\s]*)?account|register|registration|sign[-_\s]*up|signup)(?:[^a-z]|$)/u.test(
+      pageTitle,
+    );
   return {
     negative:
       /(?:^|[^a-z])(?:contact|forgot|log[-_\s]*in|newsletter|recover(?:y)?|reset[-_\s]*password|search|sign[-_\s]*in|subscribe)(?:[^a-z]|$)/u.test(
@@ -760,7 +769,7 @@ function registrationFormEvidence(input: HTMLInputElement): {
     positive:
       /(?:^|[^a-z])(?:create[-_\s]*(?:an?[-_\s]*)?account|get[-_\s]*started|join|register|registration|sign[-_\s]*up|signup)(?:[^a-z]|$)/u.test(
         hint,
-      ),
+      ) || pageTitleHasRegistrationIntent,
   };
 }
 
