@@ -880,6 +880,33 @@ describe("extension automatic autofill", () => {
     expect(isProfileOrRegistrationEmailField(email)).toBe(true);
   });
 
+  it("uses a registration page title for generic legacy forms without overriding exclusions", () => {
+    const previousTitle = document.title;
+    document.title = "Demo Site – Registration Form – Vinoth Tech Solutions";
+    document.body.innerHTML = `
+      <form class="visual-form-builder" action="/demo-site/">
+        <fieldset><legend>Registration Form</legend></fieldset>
+        <label for="vfb-14">Email *</label>
+        <input type="email" name="vfb-14" id="vfb-14" class="vfb-text required email">
+        <input type="submit" name="vfb-submit" value="Submit">
+      </form>
+      <form id="newsletter">
+        <input id="newsletter-email" type="email">
+        <button type="submit">Subscribe</button>
+      </form>
+      <form id="contact-form">
+        <input id="contact-email" type="email">
+        <button type="submit">Submit</button>
+      </form>
+    `;
+
+    expect(isRegistrationEmailField(document.querySelector("#vfb-14"))).toBe(true);
+    expect(isProfileOrRegistrationEmailField(document.querySelector("#vfb-14"))).toBe(true);
+    expect(isRegistrationEmailField(document.querySelector("#newsletter-email"))).toBe(false);
+    expect(isRegistrationEmailField(document.querySelector("#contact-email"))).toBe(false);
+    document.title = previousTitle;
+  });
+
   it("supports passwordless multi-step signup but rejects ambiguous standalone email fields", () => {
     document.body.innerHTML = `
       <form id="registration-step-one" action="/accounts/register">
