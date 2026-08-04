@@ -238,6 +238,17 @@ export function shouldDismissSuggestionsForUsername(
   return !storedUsernames.some((username) => normalizedUsername(username).startsWith(typed));
 }
 
+export function filterCredentialsForUsername<T extends { readonly username: string }>(
+  value: string,
+  credentials: readonly T[],
+): readonly T[] {
+  const typed = normalizedUsername(value);
+  if (typed.length === 0) return credentials;
+  return credentials.filter((credential) =>
+    normalizedUsername(credential.username).startsWith(typed),
+  );
+}
+
 function isInvalidatedExtensionContext(error: unknown): boolean {
   return error instanceof Error && /extension context invalidated/iu.test(error.message);
 }

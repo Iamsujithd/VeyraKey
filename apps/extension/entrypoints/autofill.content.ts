@@ -18,6 +18,7 @@ import {
   fillLoginFields,
   fillProfileField,
   fillRegistrationPasswordFields,
+  filterCredentialsForUsername,
   generateAdaptiveRegistrationPassword,
   isCredentialField,
   isLoginAction,
@@ -60,6 +61,7 @@ export default defineContentScript({
     let lastFilledCredential: { readonly password: string; readonly username: string } | null =
       null;
     const suppressedUsernameInputs = new WeakSet<HTMLInputElement>();
+    const knownUsernamesByInput = new WeakMap<HTMLInputElement, readonly string[]>();
     const generatedPasswords = new WeakMap<object, Map<RegistrationPasswordStyle, string>>();
     const closePrompt = () => {
       promptCleanup?.();
@@ -350,6 +352,23 @@ export default defineContentScript({
             return;
           }
           if (response?.status !== "suggestions") return;
+          const currentUsernameField = usernameFieldForCredentialAnchor(document, anchor);
+          if (currentUsernameField !== null) {
+            knownUsernamesByInput.set(
+              currentUsernameField,
+              response.credentials.map((credential) => credential.username),
+            );
+          }
+          const credentials = filterCredentialsForUsername(
+            currentUsernameField?.value ?? "",
+            response.credentials,
+          );
+          if (credentials.length === 0) {
+            if (currentUsernameField !== null) suppressedUsernameInputs.add(currentUsernameField);
+            closePrompt();
+            return;
+          }
+          if (currentUsernameField !== null) suppressedUsernameInputs.delete(currentUsernameField);
           const authenticateAndFill = (credentialId: string) => {
             closePrompt();
             void sendMessage({
@@ -362,14 +381,14 @@ export default defineContentScript({
               version: 1,
             });
           };
-          const options = response.credentials.map((credential) => ({
+          const options = credentials.map((credential) => ({
             detail: "Verify and fill",
             icon: response.deviceSlots.length > 0 ? "◎" : "●",
             label: credential.username || "Saved login",
             run: () => authenticateAndFill(credential.id),
           }));
           prompt("suggestions", "Passwords", response.displayHost, options, anchor);
-          promptUsernames = response.credentials.map((credential) => credential.username);
+          promptUsernames = credentials.map((credential) => credential.username);
         })
         .finally(() => {
           if (!extensionContextActive) return;
@@ -681,16 +700,23 @@ export default defineContentScript({
       (event) => {
         if (
           !event.isTrusted ||
-          promptKind !== "suggestions" ||
           !(event.target instanceof HTMLInputElement) ||
           !isUsernameField(event.target)
         ) {
           return;
         }
-        if (shouldDismissSuggestionsForUsername(event.target.value, promptUsernames)) {
+        const storedUsernames =
+          knownUsernamesByInput.get(event.target) ??
+          (promptKind === "suggestions" ? promptUsernames : null);
+        if (storedUsernames === null) return;
+        if (shouldDismissSuggestionsForUsername(event.target.value, storedUsernames)) {
           suppressedUsernameInputs.add(event.target);
-          closePrompt();
+          if (promptKind === "suggestions") closePrompt();
+          return;
         }
+        suppressedUsernameInputs.delete(event.target);
+        if (promptKind === "suggestions") closePrompt();
+        requestSuggestions(event.target);
       },
       true,
     );

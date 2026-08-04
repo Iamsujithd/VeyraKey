@@ -20,6 +20,7 @@ import {
   fillLoginFields,
   fillProfileField,
   fillRegistrationPasswordFields,
+  filterCredentialsForUsername,
   generateAdaptiveRegistrationPassword,
   generateStrongRegistrationPassword,
   isCredentialField,
@@ -135,6 +136,16 @@ describe("extension automatic autofill", () => {
     expect(shouldDismissSuggestionsForUsername("practice", ["Practice"])).toBe(false);
     expect(shouldDismissSuggestionsForUsername("other", ["Practice"])).toBe(true);
     expect(shouldDismissSuggestionsForUsername("typed", null)).toBe(true);
+  });
+
+  it("filters delayed credential suggestions against the current username", () => {
+    const credentials = [
+      { id: "student", username: "Student" },
+      { id: "person", username: "person@example.test" },
+    ];
+    expect(filterCredentialsForUsername("", credentials)).toEqual(credentials);
+    expect(filterCredentialsForUsername("STU", credentials)).toEqual([credentials[0]]);
+    expect(filterCredentialsForUsername("pk", credentials)).toEqual([]);
   });
 
   it("associates password-field suggestion requests with their username field", () => {
