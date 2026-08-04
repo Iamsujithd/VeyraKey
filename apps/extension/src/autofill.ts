@@ -238,6 +238,17 @@ export function shouldDismissSuggestionsForUsername(
   return !storedUsernames.some((username) => normalizedUsername(username).startsWith(typed));
 }
 
+export function filterCredentialsForUsername<T extends { readonly username: string }>(
+  value: string,
+  credentials: readonly T[],
+): readonly T[] {
+  const typed = normalizedUsername(value);
+  if (typed.length === 0) return credentials;
+  return credentials.filter((credential) =>
+    normalizedUsername(credential.username).startsWith(typed),
+  );
+}
+
 function isInvalidatedExtensionContext(error: unknown): boolean {
   return error instanceof Error && /extension context invalidated/iu.test(error.message);
 }
@@ -788,6 +799,15 @@ export function isRegistrationEmailField(element: Element | null): element is HT
   return evidence.positive && !evidence.negative;
 }
 
+export function isProfileOrRegistrationEmailField(
+  element: Element | null,
+): element is HTMLInputElement {
+  return (
+    element instanceof HTMLInputElement &&
+    (isRegistrationEmailField(element) || profileFieldKind(element) !== null)
+  );
+}
+
 export function isRegistrationPasswordField(element: Element | null): element is HTMLInputElement {
   if (
     !(element instanceof HTMLInputElement) ||
@@ -1153,10 +1173,11 @@ function selectLoginFields(
       if (!renderedForCredentialUse(password)) return false;
       if (credential === undefined) return true;
       if (password.value.length > 0 && password.value !== credential.password) return false;
-      return !(
-        username !== undefined &&
-        username.value.length > 0 &&
-        normalizedUsername(username.value) !== normalizedUsername(credential.username)
+      if (username === undefined || username.value.length === 0) return true;
+      const currentUsername = normalizedUsername(username.value);
+      const credentialUsername = normalizedUsername(credential.username);
+      return (
+        currentUsername === credentialUsername || credentialUsername.startsWith(currentUsername)
       );
     })
     .map((fields) => {
@@ -1217,8 +1238,15 @@ export function fillLoginFields(
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   };
-  if (fields.username !== undefined && fields.username.value.length === 0) {
-    setValue(fields.username, credential.username);
+  if (fields.username !== undefined) {
+    const currentUsername = normalizedUsername(fields.username.value);
+    const credentialUsername = normalizedUsername(credential.username);
+    if (
+      currentUsername.length === 0 ||
+      (currentUsername !== credentialUsername && credentialUsername.startsWith(currentUsername))
+    ) {
+      setValue(fields.username, credential.username);
+    }
   }
   if (fields.password.value.length === 0) setValue(fields.password, credential.password);
   return (

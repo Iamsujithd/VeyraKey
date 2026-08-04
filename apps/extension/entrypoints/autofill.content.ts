@@ -18,9 +18,11 @@ import {
   fillLoginFields,
   fillProfileField,
   fillRegistrationPasswordFields,
+  filterCredentialsForUsername,
   generateAdaptiveRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isProfileOrRegistrationEmailField,
   isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
@@ -60,6 +62,7 @@ export default defineContentScript({
     let lastFilledCredential: { readonly password: string; readonly username: string } | null =
       null;
     const suppressedUsernameInputs = new WeakSet<HTMLInputElement>();
+    const knownUsernamesByInput = new WeakMap<HTMLInputElement, readonly string[]>();
     const generatedPasswords = new WeakMap<object, Map<RegistrationPasswordStyle, string>>();
     const closePrompt = () => {
       promptCleanup?.();
@@ -350,6 +353,23 @@ export default defineContentScript({
             return;
           }
           if (response?.status !== "suggestions") return;
+          const currentUsernameField = usernameFieldForCredentialAnchor(document, anchor);
+          if (currentUsernameField !== null) {
+            knownUsernamesByInput.set(
+              currentUsernameField,
+              response.credentials.map((credential) => credential.username),
+            );
+          }
+          const credentials = filterCredentialsForUsername(
+            currentUsernameField?.value ?? "",
+            response.credentials,
+          );
+          if (credentials.length === 0) {
+            if (currentUsernameField !== null) suppressedUsernameInputs.add(currentUsernameField);
+            closePrompt();
+            return;
+          }
+          if (currentUsernameField !== null) suppressedUsernameInputs.delete(currentUsernameField);
           const authenticateAndFill = (credentialId: string) => {
             closePrompt();
             void sendMessage({
@@ -362,14 +382,14 @@ export default defineContentScript({
               version: 1,
             });
           };
-          const options = response.credentials.map((credential) => ({
+          const options = credentials.map((credential) => ({
             detail: "Verify and fill",
             icon: response.deviceSlots.length > 0 ? "◎" : "●",
             label: credential.username || "Saved login",
             run: () => authenticateAndFill(credential.id),
           }));
           prompt("suggestions", "Passwords", response.displayHost, options, anchor);
-          promptUsernames = response.credentials.map((credential) => credential.username);
+          promptUsernames = credentials.map((credential) => credential.username);
         })
         .finally(() => {
           if (!extensionContextActive) return;
@@ -681,16 +701,23 @@ export default defineContentScript({
       (event) => {
         if (
           !event.isTrusted ||
-          promptKind !== "suggestions" ||
           !(event.target instanceof HTMLInputElement) ||
           !isUsernameField(event.target)
         ) {
           return;
         }
-        if (shouldDismissSuggestionsForUsername(event.target.value, promptUsernames)) {
+        const storedUsernames =
+          knownUsernamesByInput.get(event.target) ??
+          (promptKind === "suggestions" ? promptUsernames : null);
+        if (storedUsernames === null) return;
+        if (shouldDismissSuggestionsForUsername(event.target.value, storedUsernames)) {
           suppressedUsernameInputs.add(event.target);
-          closePrompt();
+          if (promptKind === "suggestions") closePrompt();
+          return;
         }
+        suppressedUsernameInputs.delete(event.target);
+        if (promptKind === "suggestions") closePrompt();
+        requestSuggestions(event.target);
       },
       true,
     );
@@ -716,7 +743,7 @@ export default defineContentScript({
           event.isTrusted &&
           window.top === window &&
           target instanceof HTMLInputElement &&
-          profileFieldKind(target) !== null
+          isProfileOrRegistrationEmailField(target)
         ) {
           requestProfileOrPrivateEmail(target);
         } else if (event.isTrusted && window.top === window && isCredentialField(target)) {
@@ -756,7 +783,7 @@ export default defineContentScript({
           requestCardSuggestions(event.target);
         } else if (
           event.target instanceof HTMLInputElement &&
-          profileFieldKind(event.target) !== null
+          isProfileOrRegistrationEmailField(event.target)
         ) {
           requestProfileOrPrivateEmail(event.target);
         } else if (isCredentialField(event.target)) {
@@ -817,7 +844,7 @@ export default defineContentScript({
               return (
                 isRegistrationPasswordField(input) ||
                 cardFieldKind(input) !== null ||
-                profileFieldKind(input) !== null ||
+                isProfileOrRegistrationEmailField(input) ||
                 isCredentialField(input)
               );
             }) ?? null);
@@ -827,7 +854,7 @@ export default defineContentScript({
           requestStrongPassword(anchor);
         } else if (cardFieldKind(anchor) !== null) {
           requestCardSuggestions(anchor);
-        } else if (profileFieldKind(anchor) !== null) {
+        } else if (isProfileOrRegistrationEmailField(anchor)) {
           requestProfileOrPrivateEmail(anchor);
         } else {
           requestSuggestions(anchor);
@@ -878,14 +905,14 @@ export default defineContentScript({
         document.activeElement instanceof HTMLInputElement &&
         (isCredentialField(document.activeElement) ||
           cardFieldKind(document.activeElement) !== null ||
-          profileFieldKind(document.activeElement) !== null)
+          isProfileOrRegistrationEmailField(document.activeElement))
       ) {
         const active = document.activeElement;
         if (isRegistrationPasswordField(active)) {
           requestStrongPassword(active);
         } else if (cardFieldKind(active) !== null) {
           requestCardSuggestions(active);
-        } else if (profileFieldKind(active) !== null) {
+        } else if (isProfileOrRegistrationEmailField(active)) {
           requestProfileOrPrivateEmail(active);
         } else {
           requestSuggestions(active);

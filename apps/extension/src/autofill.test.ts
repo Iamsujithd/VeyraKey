@@ -20,10 +20,12 @@ import {
   fillLoginFields,
   fillProfileField,
   fillRegistrationPasswordFields,
+  filterCredentialsForUsername,
   generateAdaptiveRegistrationPassword,
   generateStrongRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isProfileOrRegistrationEmailField,
   isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
@@ -135,6 +137,16 @@ describe("extension automatic autofill", () => {
     expect(shouldDismissSuggestionsForUsername("practice", ["Practice"])).toBe(false);
     expect(shouldDismissSuggestionsForUsername("other", ["Practice"])).toBe(true);
     expect(shouldDismissSuggestionsForUsername("typed", null)).toBe(true);
+  });
+
+  it("filters delayed credential suggestions against the current username", () => {
+    const credentials = [
+      { id: "student", username: "Student" },
+      { id: "person", username: "person@example.test" },
+    ];
+    expect(filterCredentialsForUsername("", credentials)).toEqual(credentials);
+    expect(filterCredentialsForUsername("STU", credentials)).toEqual([credentials[0]]);
+    expect(filterCredentialsForUsername("pk", credentials)).toEqual([]);
   });
 
   it("associates password-field suggestion requests with their username field", () => {
@@ -316,6 +328,26 @@ describe("extension automatic autofill", () => {
     expect(fillLoginFields(document, { password: "secret", username: "practice" })).toBe(true);
     expect(username?.value).toBe("PRACTICE");
     expect(password?.value).toBe("secret");
+  });
+
+  it("completes a case-insensitive username prefix before filling the password", () => {
+    document.body.innerHTML = `
+      <form>
+        <input autocomplete="username" value="S">
+        <input type="password" autocomplete="current-password">
+      </form>
+    `;
+    const username = document.querySelector<HTMLInputElement>("[autocomplete=username]");
+    const password = document.querySelector<HTMLInputElement>("[type=password]");
+    let inputEvents = 0;
+    document.addEventListener("input", () => {
+      inputEvents += 1;
+    });
+
+    expect(fillLoginFields(document, { password: "Password123", username: "student" })).toBe(true);
+    expect(username?.value).toBe("student");
+    expect(password?.value).toBe("Password123");
+    expect(inputEvents).toBe(2);
   });
 
   it("fills a login form whose site incorrectly marks its password as new-password", () => {
@@ -828,6 +860,24 @@ describe("extension automatic autofill", () => {
     expect(isRegistrationEmailField(document.querySelector("#signup-email"))).toBe(true);
     expect(isRegistrationEmailField(document.querySelector("#newsletter-email"))).toBe(false);
     expect(isRegistrationEmailField(document.querySelector("#login-email"))).toBe(false);
+  });
+
+  it("routes a legacy metadata-free registration email field to private email", () => {
+    document.body.innerHTML = `
+      <h2>Register</h2>
+      <form id="basicBootstrapForm">
+        <label>Email address*</label>
+        <input type="email" required>
+        <input id="firstpassword" type="password" required>
+        <input id="secondpassword" type="password" required>
+        <button type="submit" name="signup" value="sign up">Submit</button>
+      </form>
+    `;
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]');
+
+    expect(email === null ? null : profileFieldKind(email)).toBeNull();
+    expect(isRegistrationEmailField(email)).toBe(true);
+    expect(isProfileOrRegistrationEmailField(email)).toBe(true);
   });
 
   it("supports passwordless multi-step signup but rejects ambiguous standalone email fields", () => {
