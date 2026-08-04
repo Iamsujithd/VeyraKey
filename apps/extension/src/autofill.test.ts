@@ -25,6 +25,7 @@ import {
   generateStrongRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isProfileOrRegistrationEmailField,
   isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
@@ -859,6 +860,24 @@ describe("extension automatic autofill", () => {
     expect(isRegistrationEmailField(document.querySelector("#signup-email"))).toBe(true);
     expect(isRegistrationEmailField(document.querySelector("#newsletter-email"))).toBe(false);
     expect(isRegistrationEmailField(document.querySelector("#login-email"))).toBe(false);
+  });
+
+  it("routes a legacy metadata-free registration email field to private email", () => {
+    document.body.innerHTML = `
+      <h2>Register</h2>
+      <form id="basicBootstrapForm">
+        <label>Email address*</label>
+        <input type="email" required>
+        <input id="firstpassword" type="password" required>
+        <input id="secondpassword" type="password" required>
+        <button type="submit" name="signup" value="sign up">Submit</button>
+      </form>
+    `;
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]');
+
+    expect(email === null ? null : profileFieldKind(email)).toBeNull();
+    expect(isRegistrationEmailField(email)).toBe(true);
+    expect(isProfileOrRegistrationEmailField(email)).toBe(true);
   });
 
   it("supports passwordless multi-step signup but rejects ambiguous standalone email fields", () => {

@@ -22,6 +22,7 @@ import {
   generateAdaptiveRegistrationPassword,
   isCredentialField,
   isLoginAction,
+  isProfileOrRegistrationEmailField,
   isRegistrationEmailField,
   isRegistrationPasswordField,
   isUsernameField,
@@ -742,7 +743,7 @@ export default defineContentScript({
           event.isTrusted &&
           window.top === window &&
           target instanceof HTMLInputElement &&
-          profileFieldKind(target) !== null
+          isProfileOrRegistrationEmailField(target)
         ) {
           requestProfileOrPrivateEmail(target);
         } else if (event.isTrusted && window.top === window && isCredentialField(target)) {
@@ -782,7 +783,7 @@ export default defineContentScript({
           requestCardSuggestions(event.target);
         } else if (
           event.target instanceof HTMLInputElement &&
-          profileFieldKind(event.target) !== null
+          isProfileOrRegistrationEmailField(event.target)
         ) {
           requestProfileOrPrivateEmail(event.target);
         } else if (isCredentialField(event.target)) {
@@ -843,7 +844,7 @@ export default defineContentScript({
               return (
                 isRegistrationPasswordField(input) ||
                 cardFieldKind(input) !== null ||
-                profileFieldKind(input) !== null ||
+                isProfileOrRegistrationEmailField(input) ||
                 isCredentialField(input)
               );
             }) ?? null);
@@ -853,7 +854,7 @@ export default defineContentScript({
           requestStrongPassword(anchor);
         } else if (cardFieldKind(anchor) !== null) {
           requestCardSuggestions(anchor);
-        } else if (profileFieldKind(anchor) !== null) {
+        } else if (isProfileOrRegistrationEmailField(anchor)) {
           requestProfileOrPrivateEmail(anchor);
         } else {
           requestSuggestions(anchor);
@@ -904,14 +905,14 @@ export default defineContentScript({
         document.activeElement instanceof HTMLInputElement &&
         (isCredentialField(document.activeElement) ||
           cardFieldKind(document.activeElement) !== null ||
-          profileFieldKind(document.activeElement) !== null)
+          isProfileOrRegistrationEmailField(document.activeElement))
       ) {
         const active = document.activeElement;
         if (isRegistrationPasswordField(active)) {
           requestStrongPassword(active);
         } else if (cardFieldKind(active) !== null) {
           requestCardSuggestions(active);
-        } else if (profileFieldKind(active) !== null) {
+        } else if (isProfileOrRegistrationEmailField(active)) {
           requestProfileOrPrivateEmail(active);
         } else {
           requestSuggestions(active);

@@ -799,6 +799,15 @@ export function isRegistrationEmailField(element: Element | null): element is HT
   return evidence.positive && !evidence.negative;
 }
 
+export function isProfileOrRegistrationEmailField(
+  element: Element | null,
+): element is HTMLInputElement {
+  return (
+    element instanceof HTMLInputElement &&
+    (isRegistrationEmailField(element) || profileFieldKind(element) !== null)
+  );
+}
+
 export function isRegistrationPasswordField(element: Element | null): element is HTMLInputElement {
   if (
     !(element instanceof HTMLInputElement) ||
