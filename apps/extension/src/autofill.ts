@@ -325,7 +325,11 @@ export async function credentialFingerprint(credential: {
   readonly username: string;
 }): Promise<string> {
   const origin = new URL(credential.topUrl).origin;
-  const normalized = `${origin.length}:${origin}|${normalizedUsername(credential.username).length}:${normalizedUsername(credential.username)}|${credential.password.length}:${credential.password}`;
+  // This receipt is scoped to a single browser tab by the background worker. Do not
+  // include the username: sites commonly clear, normalize, or replace that field while
+  // submitting and redirecting. The exact origin and password still prove that the
+  // captured secret is the one VeyraKey just released, without retaining plaintext.
+  const normalized = `${origin.length}:${origin}|${credential.password.length}:${credential.password}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
