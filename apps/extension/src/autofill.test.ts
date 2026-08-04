@@ -73,7 +73,7 @@ describe("extension automatic autofill", () => {
       expect(actual, fixture.id).toEqual(fixture.expectedPasswordPurposes);
     }
   });
-  it("recognizes a recent successful fill without retaining plaintext credentials", async () => {
+  it("recognizes a recent successful fill across redirects without retaining plaintext", async () => {
     const receipt = {
       password: "same-secret",
       topUrl: "https://example.test/login",
@@ -85,9 +85,19 @@ describe("extension automatic autofill", () => {
     await expect(credentialFingerprint(receipt)).resolves.toBe(
       await credentialFingerprint({ ...receipt, username: " person@example.test " }),
     );
+    await expect(credentialFingerprint(receipt)).resolves.toBe(
+      await credentialFingerprint({
+        ...receipt,
+        topUrl: "https://example.test/logged-in-successfully/",
+        username: "username-cleared-or-reformatted",
+      }),
+    );
     await expect(credentialFingerprint(receipt)).resolves.not.toContain("same-secret");
     await expect(
       credentialFingerprint({ ...receipt, password: "changed-secret" }),
+    ).resolves.not.toBe(await credentialFingerprint(receipt));
+    await expect(
+      credentialFingerprint({ ...receipt, topUrl: "https://other.example.test/login" }),
     ).resolves.not.toBe(await credentialFingerprint(receipt));
   });
 

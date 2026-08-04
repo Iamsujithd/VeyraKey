@@ -410,7 +410,20 @@ export default defineBackground(() => {
       const filledReceipt = parseAutofillFilledRequest(message);
       if (filledReceipt !== null) {
         if (!trustedOrigin(filledReceipt.topUrl, sender) || sender.tab?.id === undefined) return;
-        await rememberRecentFill(sender.tab.id, filledReceipt);
+        const filledTabId = sender.tab.id;
+        await rememberRecentFill(filledTabId, filledReceipt);
+        const pending = await loadPending(filledTabId);
+        if (
+          pending !== null &&
+          (await matchesRecentFill(filledTabId, {
+            password: pending.capture.password,
+            topUrl: pending.capture.topUrl,
+            username: pending.username,
+          }))
+        ) {
+          await deletePending(filledTabId);
+          await browser.action.setPopup({ popup: "popup.html", tabId: filledTabId });
+        }
         return;
       }
       const privateEmailRequest = parsePrivateEmailRequest(message);
@@ -825,6 +838,20 @@ export default defineBackground(() => {
         };
       }
       if (tabId === undefined) return { status: "unavailable", version: 1 };
+      // Autofill and submit messages cross the extension boundary independently. A fill
+      // receipt may have arrived while the vault decision above was running, so check once
+      // more immediately before persisting a prompt.
+      if (
+        await matchesRecentFill(tabId, {
+          password: capture.password,
+          topUrl: capture.topUrl,
+          username,
+        })
+      ) {
+        await deletePending(tabId);
+        await browser.action.setPopup({ popup: "popup.html", tabId });
+        return { status: "unchanged", version: 1 };
+      }
       await savePending(tabId, {
         action: decision.action,
         approved: false,
