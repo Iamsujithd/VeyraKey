@@ -1164,10 +1164,11 @@ function selectLoginFields(
       if (!renderedForCredentialUse(password)) return false;
       if (credential === undefined) return true;
       if (password.value.length > 0 && password.value !== credential.password) return false;
-      return !(
-        username !== undefined &&
-        username.value.length > 0 &&
-        normalizedUsername(username.value) !== normalizedUsername(credential.username)
+      if (username === undefined || username.value.length === 0) return true;
+      const currentUsername = normalizedUsername(username.value);
+      const credentialUsername = normalizedUsername(credential.username);
+      return (
+        currentUsername === credentialUsername || credentialUsername.startsWith(currentUsername)
       );
     })
     .map((fields) => {
@@ -1228,8 +1229,15 @@ export function fillLoginFields(
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   };
-  if (fields.username !== undefined && fields.username.value.length === 0) {
-    setValue(fields.username, credential.username);
+  if (fields.username !== undefined) {
+    const currentUsername = normalizedUsername(fields.username.value);
+    const credentialUsername = normalizedUsername(credential.username);
+    if (
+      currentUsername.length === 0 ||
+      (currentUsername !== credentialUsername && credentialUsername.startsWith(currentUsername))
+    ) {
+      setValue(fields.username, credential.username);
+    }
   }
   if (fields.password.value.length === 0) setValue(fields.password, credential.password);
   return (

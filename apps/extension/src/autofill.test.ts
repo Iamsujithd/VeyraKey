@@ -329,6 +329,26 @@ describe("extension automatic autofill", () => {
     expect(password?.value).toBe("secret");
   });
 
+  it("completes a case-insensitive username prefix before filling the password", () => {
+    document.body.innerHTML = `
+      <form>
+        <input autocomplete="username" value="S">
+        <input type="password" autocomplete="current-password">
+      </form>
+    `;
+    const username = document.querySelector<HTMLInputElement>("[autocomplete=username]");
+    const password = document.querySelector<HTMLInputElement>("[type=password]");
+    let inputEvents = 0;
+    document.addEventListener("input", () => {
+      inputEvents += 1;
+    });
+
+    expect(fillLoginFields(document, { password: "Password123", username: "student" })).toBe(true);
+    expect(username?.value).toBe("student");
+    expect(password?.value).toBe("Password123");
+    expect(inputEvents).toBe(2);
+  });
+
   it("fills a login form whose site incorrectly marks its password as new-password", () => {
     document.body.innerHTML = `
       <form id="login">
